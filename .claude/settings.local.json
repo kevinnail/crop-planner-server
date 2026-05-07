@@ -3,7 +3,9 @@
     "allow": [
       "Bash(Get-ChildItem -Force)",
       "Bash(Select-Object Name, PSIsContainer)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(npm test *)",
+      "Bash(npm run *)"
     ]
   }
 }

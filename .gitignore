@@ -1,2 +1,3 @@
 backend-starter
 *.env
+node_modules

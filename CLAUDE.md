@@ -2,9 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-This repo is the backend API and companion website for the **Crop Planner** iOS app (`com.kevinnail.gardentracker`), available on the Apple App Store.
+This repo is the backend API for the **Crop Planner** iOS app (`com.kevinnail.gardentracker`), available on the Apple App Store.
 
-Read `backend-starter/SPEC.md` for the full feature specification. Read `backend-starter/PLAN.md` for the implementation plan (15 vertical slices).
+> **⚠️ Scope note (2026-05-07):** v1 scope is **cloud backup via Apple IAP only**. Stripe web subscriptions, the `/config/flags` endpoint, and the Next.js companion website (`/web`) are **deferred** — see `backend-starter/PLAN.md`'s `Future Work` section. The sections below that mention Stripe or the website describe the eventual system, not current scope. When in doubt, `PLAN.md`'s active slices are the source of truth.
+
+Read `backend-starter/SPEC.md` for the full feature specification. Read `backend-starter/PLAN.md` for the implementation plan (9 vertical slices for v1).
 
 ## What This Repo Does
 
@@ -31,8 +33,8 @@ Read `backend-starter/SPEC.md` for the full feature specification. Read `backend
 npm run dev          # Start Express server with hot reload (tsx watch)
 npm run build        # Compile TypeScript
 npm run test         # Run Vitest test suite
-npm run db:generate  # Generate Drizzle migration from schema changes
-npm run db:migrate   # Apply migrations to database
+npm run db:generate     # Generate a SQL file from schema.ts changes (CREATE/ALTER TABLE statements)
+npm run db:apply-schema # Run the generated SQL against the database (creates/alters tables)
 npm run db:studio    # Open Drizzle Studio (visual DB browser)
 
 cd web && npm run dev    # Start Next.js dev server
@@ -43,6 +45,8 @@ Run a single test file:
 ```bash
 npm run test -- tests/health.test.ts
 ```
+
+**Schema changes**: edit `src/db/schema.ts` → `npm run db:generate` (writes a diff SQL file into `drizzle/`) → review the generated SQL → `npm run db:apply-schema`. Files in `drizzle/` are generated — never hand-edit them.
 
 ## Architecture
 
@@ -57,7 +61,7 @@ The `/web` Next.js website is a separate npm workspace with its own `package.jso
 **Always build in vertical slices.** A slice = one complete feature from database → API → tests → frontend. Never build all DB tables, then all routes, then all UI.
 
 A slice is done only when:
-1. The schema/migration exists and runs cleanly
+1. The schema file exists and applies cleanly to the database
 2. The route handles the happy path and at least one failure case
 3. Tests cover both
 4. Any corresponding frontend page is wired up and renders real data

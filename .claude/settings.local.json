@@ -18,7 +18,8 @@
       "Bash(pg_isready)",
       "Bash(psql -U postgres -lqt)",
       "Bash(psql -U postgres -l)",
-      "Bash(npm uninstall *)"
+      "Bash(npm uninstall *)",
+      "Bash(git rm *)"
     ]
   }
 }

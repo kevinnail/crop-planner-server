@@ -1,22 +1,46 @@
 {
-    "workbench.colorCustomizations": {
-        "activityBar.activeBackground": "#a08269",
-        "activityBar.background": "#a08269",
-        "activityBar.foreground": "#15202b",
-        "activityBar.inactiveForeground": "#15202b99",
-        "activityBarBadge.background": "#b1cebe",
-        "activityBarBadge.foreground": "#15202b",
-        "commandCenter.border": "#e7e7e799",
-        "sash.hoverBorder": "#a08269",
-        "statusBar.background": "#836953",
-        "statusBar.foreground": "#e7e7e7",
-        "statusBarItem.hoverBackground": "#a08269",
-        "statusBarItem.remoteBackground": "#836953",
-        "statusBarItem.remoteForeground": "#e7e7e7",
-        "titleBar.activeBackground": "#836953",
-        "titleBar.activeForeground": "#e7e7e7",
-        "titleBar.inactiveBackground": "#83695399",
-        "titleBar.inactiveForeground": "#e7e7e799"
-    },
-    "peacock.color": "#836953"
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "eslint.validate": ["javascript", "typescript"],
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[markdown]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[yaml]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "workbench.colorCustomizations": {
+    "activityBar.activeBackground": "#a08269",
+    "activityBar.background": "#a08269",
+    "activityBar.foreground": "#15202b",
+    "activityBar.inactiveForeground": "#15202b99",
+    "activityBarBadge.background": "#b1cebe",
+    "activityBarBadge.foreground": "#15202b",
+    "commandCenter.border": "#e7e7e799",
+    "sash.hoverBorder": "#a08269",
+    "statusBar.background": "#836953",
+    "statusBar.foreground": "#e7e7e7",
+    "statusBarItem.hoverBackground": "#a08269",
+    "statusBarItem.remoteBackground": "#836953",
+    "statusBarItem.remoteForeground": "#e7e7e7",
+    "titleBar.activeBackground": "#836953",
+    "titleBar.activeForeground": "#e7e7e7",
+    "titleBar.inactiveBackground": "#83695399",
+    "titleBar.inactiveForeground": "#e7e7e799"
+  },
+  "peacock.color": "#836953"
 }

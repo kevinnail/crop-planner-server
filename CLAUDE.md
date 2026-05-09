@@ -15,17 +15,17 @@ Read `backend-starter/SPEC.md` for the full feature specification. Read `backend
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Runtime | Node.js + TypeScript |
-| Framework | Express |
-| Auth | better-auth |
-| ORM | Drizzle |
-| Database | PostgreSQL (Railway add-on) |
-| Payments | Stripe (web), RevenueCat (IAP bridge) |
-| Website | Next.js 14 (App Router), co-located in `/web` |
-| Testing | Vitest + Supertest |
-| Hosting | Railway (API + DB), Vercel (website) |
+| Layer     | Technology                                    |
+| --------- | --------------------------------------------- |
+| Runtime   | Node.js + TypeScript                          |
+| Framework | Express                                       |
+| Auth      | better-auth                                   |
+| ORM       | Drizzle                                       |
+| Database  | PostgreSQL (Railway add-on)                   |
+| Payments  | Stripe (web), RevenueCat (IAP bridge)         |
+| Website   | Next.js 14 (App Router), co-located in `/web` |
+| Testing   | Vitest + Supertest                            |
+| Hosting   | Railway (API + DB), Vercel (website)          |
 
 ## Development Commands
 
@@ -42,6 +42,7 @@ cd web && npm run build  # Production build
 ```
 
 Run a single test file:
+
 ```bash
 npm run test -- tests/health.test.ts
 ```
@@ -61,6 +62,7 @@ The `/web` Next.js website is a separate npm workspace with its own `package.jso
 **Always build in vertical slices.** A slice = one complete feature from database → API → tests → frontend. Never build all DB tables, then all routes, then all UI.
 
 A slice is done only when:
+
 1. The schema file exists and applies cleanly to the database
 2. The route handles the happy path and at least one failure case
 3. Tests cover both

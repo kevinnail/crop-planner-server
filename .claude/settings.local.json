@@ -13,7 +13,13 @@
       "Bash(Select-Object FullName)",
       "Bash(Get-ChildItem -Recurse src/db/)",
       "Bash(echo \"exit: $?\")",
-      "Bash(del *)"
+      "Bash(del *)",
+      "Bash(psql --version)",
+      "Bash(pg_isready)",
+      "Bash(psql -U postgres -lqt)",
+      "Bash(psql -U postgres -l)",
+      "Bash(npm uninstall *)",
+      "Bash(git rm *)"
     ]
   }
 }

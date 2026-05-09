@@ -1,4 +1,5 @@
 backend-starter
 *.env
+.env.test
 node_modules
 dist

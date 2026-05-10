@@ -161,3 +161,171 @@ describe('POST /api/auth/sign-up/email', () => {
     });
   });
 });
+
+const SIGNED_UP = {
+  name: 'Signed Up',
+  email: 'signed-up@example.com',
+  password: 'password1234',
+};
+
+async function signUp(): Promise<string[]> {
+  const res = await request(app).post('/api/auth/sign-up/email').send(SIGNED_UP);
+  if (res.status !== 200) throw new Error(`sign-up failed: ${String(res.status)}`);
+  return extractCookies(res);
+}
+
+function extractCookies(res: request.Response): string[] {
+  const raw = res.headers['set-cookie'];
+  if (!raw) return [];
+  return Array.isArray(raw) ? raw : [raw];
+}
+
+function cookieHeader(cookies: string[]): string {
+  return cookies.map((c) => c.split(';')[0]).join('; ');
+}
+
+describe('POST /api/auth/sign-in/email', () => {
+  describe('happy path', () => {
+    it('returns 200 with the user, a session token, and a session cookie', async () => {
+      await signUp();
+
+      const res = await request(app).post('/api/auth/sign-in/email').send({
+        email: SIGNED_UP.email,
+        password: SIGNED_UP.password,
+      });
+
+      expect(res.status).toBe(200);
+      const body = res.body as SignUpResponse;
+      expect(body.user.email).toBe(SIGNED_UP.email);
+      expect(typeof body.token).toBe('string');
+      expect(body.token.length).toBeGreaterThan(0);
+
+      const cookies = extractCookies(res);
+      expect(cookies.some((c) => c.includes('session'))).toBe(true);
+    });
+
+    it('persists a new session row tied to the user on each sign-in', async () => {
+      await signUp();
+      const userRows = await db.select().from(user).where(eq(user.email, SIGNED_UP.email));
+      const userId = userRows[0]?.id;
+      if (!userId) throw new Error('expected user row');
+
+      const before = await db.select().from(session).where(eq(session.userId, userId));
+
+      const res = await request(app).post('/api/auth/sign-in/email').send({
+        email: SIGNED_UP.email,
+        password: SIGNED_UP.password,
+      });
+      expect(res.status).toBe(200);
+
+      const after = await db.select().from(session).where(eq(session.userId, userId));
+      expect(after.length).toBe(before.length + 1);
+    });
+  });
+
+  describe('failure cases', () => {
+    it('rejects sign-in with the wrong password', async () => {
+      await signUp();
+
+      const res = await request(app).post('/api/auth/sign-in/email').send({
+        email: SIGNED_UP.email,
+        password: 'wrong-password-here',
+      });
+
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(res.status).toBeLessThan(500);
+      expect(res.headers['set-cookie']).toBeUndefined();
+    });
+
+    it('rejects sign-in for an email that has not signed up', async () => {
+      const res = await request(app).post('/api/auth/sign-in/email').send({
+        email: 'nobody@example.com',
+        password: 'password1234',
+      });
+
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(res.status).toBeLessThan(500);
+      expect(res.headers['set-cookie']).toBeUndefined();
+    });
+  });
+});
+
+interface SessionResponseBody {
+  user: { id: string; email: string };
+  session: { token: string; expiresAt: string };
+}
+
+describe('GET /api/auth/get-session', () => {
+  it('returns the user and session for a request with a valid session cookie', async () => {
+    const cookies = await signUp();
+
+    const res = await request(app)
+      .get('/api/auth/get-session')
+      .set('Cookie', cookieHeader(cookies));
+
+    expect(res.status).toBe(200);
+    const body = res.body as SessionResponseBody;
+    expect(body.user.email).toBe(SIGNED_UP.email);
+    expect(typeof body.session.token).toBe('string');
+    expect(new Date(body.session.expiresAt).getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('returns 200 with a null body when no session cookie is sent', async () => {
+    // better-auth's get-session endpoint returns 200/null for unauthenticated
+    // requests; the 401 is enforced by the app-level auth middleware that
+    // wraps it (added in Slice 7 for sync routes). This test pins the
+    // framework-level behavior so the middleware test catches the 401 path.
+    const res = await request(app).get('/api/auth/get-session');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toBeNull();
+  });
+
+  it('returns 200 with a null body when the session cookie is invalid', async () => {
+    const res = await request(app)
+      .get('/api/auth/get-session')
+      .set('Cookie', 'better-auth.session_token=not-a-real-token');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toBeNull();
+  });
+});
+
+describe('POST /api/auth/sign-out', () => {
+  it('clears the session and subsequent get-session returns null', async () => {
+    const cookies = await signUp();
+
+    const out = await request(app)
+      .post('/api/auth/sign-out')
+      .set('Cookie', cookieHeader(cookies));
+    expect(out.status).toBe(200);
+
+    // Reuse the original cookie — server-side the session row should be gone,
+    // so re-presenting it must not authenticate.
+    const after = await request(app)
+      .get('/api/auth/get-session')
+      .set('Cookie', cookieHeader(cookies));
+    expect(after.status).toBe(200);
+    expect(after.body).toBeNull();
+  });
+
+  it('deletes the session row from the database', async () => {
+    const cookies = await signUp();
+    const userRows = await db.select().from(user).where(eq(user.email, SIGNED_UP.email));
+    const userId = userRows[0]?.id;
+    if (!userId) throw new Error('expected user row');
+
+    const before = await db.select().from(session).where(eq(session.userId, userId));
+    expect(before.length).toBeGreaterThanOrEqual(1);
+
+    await request(app).post('/api/auth/sign-out').set('Cookie', cookieHeader(cookies));
+
+    const after = await db.select().from(session).where(eq(session.userId, userId));
+    expect(after).toHaveLength(0);
+  });
+
+  it('is a no-op when called without a session (idempotent)', async () => {
+    const res = await request(app).post('/api/auth/sign-out');
+    expect(res.status).toBe(200);
+  });
+});

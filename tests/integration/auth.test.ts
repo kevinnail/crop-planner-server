@@ -1,6 +1,15 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
+
+const { sendMock } = vi.hoisted(() => ({ sendMock: vi.fn() }));
+
+vi.mock('resend', () => ({
+  Resend: vi.fn(() => ({
+    emails: { send: sendMock },
+  })),
+}));
+
 import app from '../../src/app';
 import { db } from '../../src/db/connection';
 import { user, session, account } from '../../src/db/schema';
@@ -22,8 +31,17 @@ interface ErrorResponse {
   code?: string;
 }
 
+interface ResendSendArgs {
+  from: string;
+  to: string;
+  subject: string;
+  text: string;
+}
+
 beforeEach(async () => {
   await resetDb();
+  sendMock.mockReset();
+  sendMock.mockResolvedValue({ data: { id: 'msg_test' }, error: null });
 });
 
 describe('POST /api/auth/sign-up/email', () => {
@@ -327,5 +345,102 @@ describe('POST /api/auth/sign-out', () => {
   it('is a no-op when called without a session (idempotent)', async () => {
     const res = await request(app).post('/api/auth/sign-out');
     expect(res.status).toBe(200);
+  });
+});
+
+describe('POST /api/auth/request-password-reset', () => {
+  it('sends a reset email containing the reset URL when the email is registered', async () => {
+    await signUp();
+
+    const res = await request(app)
+      .post('/api/auth/request-password-reset')
+      .send({ email: SIGNED_UP.email });
+
+    expect(res.status).toBe(200);
+    expect(sendMock).toHaveBeenCalledTimes(1);
+
+    const args = sendMock.mock.calls[0]?.[0] as ResendSendArgs | undefined;
+    if (!args) throw new Error('expected sendMock to be called with arguments');
+    expect(args.to).toBe(SIGNED_UP.email);
+    expect(args.subject).toBe('Reset your Crop Planner password');
+    expect(args.text).toMatch(/\/reset-password\/[A-Za-z0-9_-]+/);
+  });
+
+  it('returns 200 without sending email for an unregistered address (no enumeration)', async () => {
+    const res = await request(app)
+      .post('/api/auth/request-password-reset')
+      .send({ email: 'nobody@example.com' });
+
+    expect(res.status).toBe(200);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST /api/auth/reset-password', () => {
+  async function requestResetAndExtractToken(): Promise<string> {
+    await signUp();
+    sendMock.mockClear();
+
+    const reqRes = await request(app)
+      .post('/api/auth/request-password-reset')
+      .send({ email: SIGNED_UP.email });
+    expect(reqRes.status).toBe(200);
+
+    const args = sendMock.mock.calls[0]?.[0] as ResendSendArgs | undefined;
+    if (!args) throw new Error('expected sendMock to be called with arguments');
+    const match = /\/reset-password\/([^?\s]+)/.exec(args.text);
+    if (!match?.[1]) throw new Error(`reset token not found in email body: ${args.text}`);
+    return match[1];
+  }
+
+  it('sets a new password and the user can sign in with it (and not with the old one)', async () => {
+    const NEW_PASSWORD = 'newpass1234';
+    const token = await requestResetAndExtractToken();
+
+    const reset = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token, newPassword: NEW_PASSWORD });
+    expect(reset.status).toBe(200);
+
+    const oldFails = await request(app).post('/api/auth/sign-in/email').send({
+      email: SIGNED_UP.email,
+      password: SIGNED_UP.password,
+    });
+    expect(oldFails.status).toBeGreaterThanOrEqual(400);
+    expect(oldFails.status).toBeLessThan(500);
+
+    const ok = await request(app).post('/api/auth/sign-in/email').send({
+      email: SIGNED_UP.email,
+      password: NEW_PASSWORD,
+    });
+    expect(ok.status).toBe(200);
+  });
+
+  it('rejects a reused token (already consumed by a successful reset)', async () => {
+    const token = await requestResetAndExtractToken();
+
+    const first = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token, newPassword: 'newpass1234' });
+    expect(first.status).toBe(200);
+
+    const second = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token, newPassword: 'evennewer1234' });
+    expect(second.status).toBeGreaterThanOrEqual(400);
+    expect(second.status).toBeLessThan(500);
+    const body = second.body as ErrorResponse;
+    expect(body.code).toMatch(/INVALID_TOKEN/i);
+  });
+
+  it('rejects an unknown token', async () => {
+    const res = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token: 'this-token-does-not-exist', newPassword: 'newpass1234' });
+
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+    const body = res.body as ErrorResponse;
+    expect(body.code).toMatch(/INVALID_TOKEN/i);
   });
 });

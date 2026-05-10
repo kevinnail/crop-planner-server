@@ -44,9 +44,9 @@ describe('sendEmail', () => {
   it('throws when EMAIL_FROM is not set and does not call Resend', async () => {
     delete process.env.EMAIL_FROM;
 
-    await expect(
-      sendEmail({ to: 'user@example.com', subject: 's', text: 't' }),
-    ).rejects.toThrow('EMAIL_FROM is not set');
+    await expect(sendEmail({ to: 'user@example.com', subject: 's', text: 't' })).rejects.toThrow(
+      'EMAIL_FROM is not set',
+    );
 
     expect(sendMock).not.toHaveBeenCalled();
   });
@@ -57,8 +57,8 @@ describe('sendEmail', () => {
       error: { name: 'validation_error', message: 'Invalid `to` field' },
     });
 
-    await expect(
-      sendEmail({ to: 'bogus', subject: 's', text: 't' }),
-    ).rejects.toThrow('Resend error: validation_error: Invalid `to` field');
+    await expect(sendEmail({ to: 'bogus', subject: 's', text: 't' })).rejects.toThrow(
+      'Resend error: validation_error: Invalid `to` field',
+    );
   });
 });

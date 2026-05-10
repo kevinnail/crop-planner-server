@@ -19,7 +19,15 @@
       "Bash(psql -U postgres -lqt)",
       "Bash(psql -U postgres -l)",
       "Bash(npm uninstall *)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Bash(psql -h localhost -d crop_planner_test -c \"\\\\dt\")",
+      "Bash(PGPASSWORD= psql -h localhost -U postgres -d crop_planner_test -c \"\\\\dt\")",
+      "Bash(DATABASE_URL=\"postgres://postgres:postgres@localhost:5432/crop_planner_test\" npm run db:apply-schema)",
+      "Bash(npx prettier *)",
+      "Read(//tmp/**)",
+      "Bash(mkdir -p tests/unit tests/integration tests/helpers)",
+      "Bash(rmdir tests/setup)",
+      "Bash(git mv *)"
     ]
   }
 }

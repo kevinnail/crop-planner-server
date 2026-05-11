@@ -313,9 +313,7 @@ describe('POST /api/auth/sign-out', () => {
   it('clears the session and subsequent get-session returns null', async () => {
     const cookies = await signUp();
 
-    const out = await request(app)
-      .post('/api/auth/sign-out')
-      .set('Cookie', cookieHeader(cookies));
+    const out = await request(app).post('/api/auth/sign-out').set('Cookie', cookieHeader(cookies));
     expect(out.status).toBe(200);
 
     // Reuse the original cookie — server-side the session row should be gone,

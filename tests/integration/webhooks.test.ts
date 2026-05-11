@@ -135,10 +135,7 @@ describe('POST /webhooks/revenuecat', () => {
         .set('Authorization', AUTH)
         .send(buildBody({ app_user_id: userId }));
 
-      const rows = await db
-        .select()
-        .from(subscriptions)
-        .where(eq(subscriptions.rcUserId, userId));
+      const rows = await db.select().from(subscriptions).where(eq(subscriptions.rcUserId, userId));
       expect(rows).toHaveLength(1);
       expect(rows[0]?.userId).toBe(userId);
     });

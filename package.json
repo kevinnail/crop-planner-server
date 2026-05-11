@@ -18,7 +18,8 @@
     "db:generate": "drizzle-kit generate",
     "db:apply-schema": "tsx src/db/apply-schema.ts",
     "db:apply-schema:test": "tsx --env-file=.env.test src/db/apply-schema.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "manual:password-reset": "tsx scripts/manual-password-reset.ts"
   },
   "dependencies": {
     "better-auth": "^1.6.10",

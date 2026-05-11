@@ -2,6 +2,7 @@ import express from 'express';
 import { toNodeHandler } from 'better-auth/node';
 import { auth } from './lib/auth';
 import healthRouter from './routes/health';
+import webhooksRouter from './routes/webhooks';
 
 const app = express();
 
@@ -14,5 +15,6 @@ app.all('/api/auth/*', (req, res) => {
 
 app.use(express.json());
 app.use('/health', healthRouter);
+app.use('/webhooks', webhooksRouter);
 
 export default app;

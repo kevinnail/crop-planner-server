@@ -27,7 +27,12 @@
       "Read(//tmp/**)",
       "Bash(mkdir -p tests/unit tests/integration tests/helpers)",
       "Bash(rmdir tests/setup)",
-      "Bash(git mv *)"
+      "Bash(git mv *)",
+      "WebFetch(domain:www.revenuecat.com)",
+      "WebFetch(domain:community.revenuecat.com)",
+      "Bash(where.exe cloudflared *)",
+      "Bash(cloudflared --version)",
+      "Bash(node *)"
     ]
   }
 }

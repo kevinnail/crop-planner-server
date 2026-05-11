@@ -4,6 +4,7 @@ import { auth } from './lib/auth';
 import { asyncHandler } from './lib/asyncHandler';
 import healthRouter from './routes/health';
 import webhooksRouter from './routes/webhooks';
+import syncRouter from './routes/sync';
 
 const app = express();
 
@@ -20,6 +21,7 @@ app.all(
 app.use(express.json());
 app.use('/health', healthRouter);
 app.use('/webhooks', webhooksRouter);
+app.use('/sync', syncRouter);
 
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   console.error(err);

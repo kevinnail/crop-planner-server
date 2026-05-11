@@ -111,9 +111,7 @@ describe('checkSubscription middleware (via /test/protected)', () => {
     it('returns 403 when the authenticated user has no subscription row', async () => {
       const { cookies } = await signUp();
 
-      const res = await request(app)
-        .get('/test/protected')
-        .set('Cookie', cookieHeader(cookies));
+      const res = await request(app).get('/test/protected').set('Cookie', cookieHeader(cookies));
 
       expect(res.status).toBe(403);
       const body = res.body as ErrorResponse;
@@ -128,9 +126,7 @@ describe('checkSubscription middleware (via /test/protected)', () => {
         expiresAt: new Date(Date.UTC(2099, 0, 1)),
       });
 
-      const res = await request(app)
-        .get('/test/protected')
-        .set('Cookie', cookieHeader(cookies));
+      const res = await request(app).get('/test/protected').set('Cookie', cookieHeader(cookies));
 
       expect(res.status).toBe(403);
     });
@@ -143,9 +139,7 @@ describe('checkSubscription middleware (via /test/protected)', () => {
         expiresAt: new Date(Date.UTC(2000, 0, 1)),
       });
 
-      const res = await request(app)
-        .get('/test/protected')
-        .set('Cookie', cookieHeader(cookies));
+      const res = await request(app).get('/test/protected').set('Cookie', cookieHeader(cookies));
 
       expect(res.status).toBe(403);
     });
@@ -165,9 +159,7 @@ describe('checkSubscription middleware (via /test/protected)', () => {
         rcUserId: 'rc_other',
       });
 
-      const res = await request(app)
-        .get('/test/protected')
-        .set('Cookie', cookieHeader(cookies));
+      const res = await request(app).get('/test/protected').set('Cookie', cookieHeader(cookies));
 
       expect(res.status).toBe(403);
     });
@@ -182,9 +174,7 @@ describe('checkSubscription middleware (via /test/protected)', () => {
         expiresAt: new Date(Date.UTC(2099, 0, 1)),
       });
 
-      const res = await request(app)
-        .get('/test/protected')
-        .set('Cookie', cookieHeader(cookies));
+      const res = await request(app).get('/test/protected').set('Cookie', cookieHeader(cookies));
 
       expect(res.status).toBe(200);
       const body = res.body as ProtectedResponse;

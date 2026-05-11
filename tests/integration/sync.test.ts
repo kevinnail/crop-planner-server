@@ -325,7 +325,7 @@ describe('GET /sync/pull', () => {
   });
 
   describe('user scoping', () => {
-    it('does not return another user\'s rows', async () => {
+    it("does not return another user's rows", async () => {
       const caller = await signUp({ email: 'caller@example.com', name: 'Caller' });
       await makeActiveSubscription(caller.userId, 'caller');
 
@@ -337,9 +337,7 @@ describe('GET /sync/pull', () => {
       });
       await seedFullDataset(otherId);
 
-      const res = await request(app)
-        .get('/sync/pull')
-        .set('Cookie', cookieHeader(caller.cookies));
+      const res = await request(app).get('/sync/pull').set('Cookie', cookieHeader(caller.cookies));
 
       expect(res.status).toBe(200);
       const body = res.body as SyncPullResponse;

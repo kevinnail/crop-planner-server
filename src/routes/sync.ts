@@ -264,11 +264,7 @@ function validateChanges(body: unknown): ValidationResult {
 }
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-type PushHandler = (
-  tx: Tx,
-  userId: string,
-  rows: Record<string, unknown>[],
-) => Promise<PushResult>;
+type PushHandler = (tx: Tx, userId: string, rows: Record<string, unknown>[]) => Promise<PushResult>;
 
 const pushHandlers: Record<PushTableName, PushHandler> = {
   locations: async (tx, userId, rows) => {

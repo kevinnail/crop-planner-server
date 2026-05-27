@@ -109,7 +109,7 @@ async function run(): Promise<void> {
   });
   if (signup.status === 200) {
     console.log(`  -> created new user (initial password: "${initialPassword}").`);
-  } else if (bodyCode(signup.body) === 'USER_ALREADY_EXISTS') {
+  } else if (bodyCode(signup.body) === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL') {
     console.log('  -> user already exists, continuing.');
   } else {
     console.error('  -> unexpected sign-up response:', signup);
@@ -122,6 +122,8 @@ async function run(): Promise<void> {
     console.error('  -> request-password-reset failed:', requested);
     exit(1);
   }
+  console.log('requested ', requested);
+
   console.log(`  -> 200. Check ${email} for the reset email.`);
 
   const token = await promptForToken();

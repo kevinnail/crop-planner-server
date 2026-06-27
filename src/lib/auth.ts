@@ -17,7 +17,8 @@ const passwordResetRedirectURL =
 export const auth = betterAuth({
   baseURL,
   secret,
-  trustedOrigins: ['cropplanner://'],
+  trustedOrigins: ['cropplanner://', ...(process.env.NODE_ENV !== 'production' ? ['exp://*'] : [])],
+
   database: drizzleAdapter(db, {
     provider: 'pg',
     schema,

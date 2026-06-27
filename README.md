@@ -24,7 +24,7 @@ Node.js + TypeScript, Express, Drizzle (Postgres), better-auth, Vitest + Superte
    ```
 
 3. **Configure env:**
-   - Copy `.env.example` to `.env` and fill in the values for local dev.
+   - Create `.env` with the variables listed in `backend-starter/SETUP.md` §6.
    - Create `.env.test` for tests (uses `crop_planner_test`). Both files are gitignored.
 
 4. **Apply schema:**

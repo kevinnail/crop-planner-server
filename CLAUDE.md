@@ -79,15 +79,17 @@ A slice is done only when:
 
 ## Environment Variables
 
-See `.env.example` for all required variables. Key ones:
+See `backend-starter/SETUP.md` §6 for the full list and notes. Active v1 variables:
 
 ```
+PORT=7890
 DATABASE_URL=
 BETTER_AUTH_SECRET=
+BETTER_AUTH_URL=
+PASSWORD_RESET_REDIRECT_URL=cropplanner://reset-password
 REVENUECAT_WEBHOOK_AUTH_HEADER=
-STRIPE_SECRET_KEY=
-STRIPE_WEBHOOK_SECRET=
-STRIPE_PRICE_ID=
-ENABLE_STRIPE_EXTERNAL_LINK=true
-NEXT_PUBLIC_API_URL=
+RESEND_API_KEY=
+EMAIL_FROM=
 ```
+
+Stripe and Next.js website env vars (`STRIPE_*`, `ENABLE_STRIPE_EXTERNAL_LINK`, `NEXT_PUBLIC_API_URL`) are deferred — see `PLAN.md` Future Work.

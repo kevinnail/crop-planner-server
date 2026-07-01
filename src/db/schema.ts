@@ -99,8 +99,13 @@ export const subscriptions = pgTable('subscriptions', {
 });
 
 // Sync tables — mirror the iOS app's SQLite schema, scoped per user.
-// Every row's identity is (user_id, id): the client supplies `id` from its
-// local SQLite AUTOINCREMENT, and the server namespaces it by user.
+//
+// Each synced row's global identity is (user_id, uuid): the client mints a
+// UUID at creation and the server namespaces it by user. The server stores NO
+// local integer id — that's a device-local concern. Foreign keys travel as the
+// parent's UUID. `updated_at` is the last-write-wins comparator (a millisecond
+// string in the iOS `strftime('%Y-%m-%d %H:%M:%f','now')` format). `deleted_at`
+// is a nullable tombstone — non-NULL means the row is soft-deleted.
 
 export const locations = pgTable(
   'locations',
@@ -108,11 +113,13 @@ export const locations = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    id: integer('id').notNull(),
+    uuid: text('uuid').notNull(),
     name: text('name').notNull(),
     orderIndex: integer('order_index').notNull().default(0),
+    updatedAt: text('updated_at').notNull(),
+    deletedAt: text('deleted_at'),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.id] })],
+  (table) => [primaryKey({ columns: [table.userId, table.uuid] })],
 );
 
 export const gardens = pgTable(
@@ -121,17 +128,19 @@ export const gardens = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    id: integer('id').notNull(),
-    locationId: integer('location_id').notNull(),
+    uuid: text('uuid').notNull(),
+    locationUuid: text('location_uuid').notNull(),
     name: text('name').notNull(),
     recordType: text('record_type').notNull().default('plant'),
     orderIndex: integer('order_index').notNull().default(0),
+    updatedAt: text('updated_at').notNull(),
+    deletedAt: text('deleted_at'),
   },
-  (t) => [
-    primaryKey({ columns: [t.userId, t.id] }),
+  (table) => [
+    primaryKey({ columns: [table.userId, table.uuid] }),
     foreignKey({
-      columns: [t.userId, t.locationId],
-      foreignColumns: [locations.userId, locations.id],
+      columns: [table.userId, table.locationUuid],
+      foreignColumns: [locations.userId, locations.uuid],
       name: 'gardens_location_fk',
     }).onDelete('cascade'),
   ],
@@ -143,16 +152,18 @@ export const sections = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    id: integer('id').notNull(),
-    gardenId: integer('garden_id').notNull(),
+    uuid: text('uuid').notNull(),
+    gardenUuid: text('garden_uuid').notNull(),
     name: text('name').notNull(),
     orderIndex: integer('order_index').notNull().default(0),
+    updatedAt: text('updated_at').notNull(),
+    deletedAt: text('deleted_at'),
   },
-  (t) => [
-    primaryKey({ columns: [t.userId, t.id] }),
+  (table) => [
+    primaryKey({ columns: [table.userId, table.uuid] }),
     foreignKey({
-      columns: [t.userId, t.gardenId],
-      foreignColumns: [gardens.userId, gardens.id],
+      columns: [table.userId, table.gardenUuid],
+      foreignColumns: [gardens.userId, gardens.uuid],
       name: 'sections_garden_fk',
     }).onDelete('cascade'),
   ],
@@ -164,8 +175,8 @@ export const cropInstances = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    id: integer('id').notNull(),
-    sectionId: integer('section_id').notNull(),
+    uuid: text('uuid').notNull(),
+    sectionUuid: text('section_uuid').notNull(),
     name: text('name').notNull(),
     plantCount: integer('plant_count').notNull().default(1),
     startDate: text('start_date').notNull(),
@@ -174,15 +185,16 @@ export const cropInstances = pgTable(
     notes: text('notes'),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
+    deletedAt: text('deleted_at'),
   },
-  (t) => [
-    primaryKey({ columns: [t.userId, t.id] }),
+  (table) => [
+    primaryKey({ columns: [table.userId, table.uuid] }),
     foreignKey({
-      columns: [t.userId, t.sectionId],
-      foreignColumns: [sections.userId, sections.id],
+      columns: [table.userId, table.sectionUuid],
+      foreignColumns: [sections.userId, sections.uuid],
       name: 'crop_instances_section_fk',
     }).onDelete('cascade'),
-    check('crop_instances_plant_count_check', sql`${t.plantCount} > 0`),
+    check('crop_instances_plant_count_check', sql`${table.plantCount} > 0`),
   ],
 );
 
@@ -192,21 +204,23 @@ export const cropStages = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    id: integer('id').notNull(),
-    cropInstanceId: integer('crop_instance_id').notNull(),
+    uuid: text('uuid').notNull(),
+    cropInstanceUuid: text('crop_instance_uuid').notNull(),
     // No FK: stage_definitions live on the device as deterministic seed data.
     stageDefinitionId: integer('stage_definition_id').notNull(),
     durationWeeks: integer('duration_weeks').notNull(),
     orderIndex: integer('order_index').notNull().default(0),
+    updatedAt: text('updated_at').notNull(),
+    deletedAt: text('deleted_at'),
   },
-  (t) => [
-    primaryKey({ columns: [t.userId, t.id] }),
+  (table) => [
+    primaryKey({ columns: [table.userId, table.uuid] }),
     foreignKey({
-      columns: [t.userId, t.cropInstanceId],
-      foreignColumns: [cropInstances.userId, cropInstances.id],
+      columns: [table.userId, table.cropInstanceUuid],
+      foreignColumns: [cropInstances.userId, cropInstances.uuid],
       name: 'crop_stages_crop_instance_fk',
     }).onDelete('cascade'),
-    check('crop_stages_duration_weeks_check', sql`${t.durationWeeks} > 0`),
+    check('crop_stages_duration_weeks_check', sql`${table.durationWeeks} > 0`),
   ],
 );
 
@@ -216,25 +230,27 @@ export const tasks = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    id: integer('id').notNull(),
-    cropInstanceId: integer('crop_instance_id').notNull(),
+    uuid: text('uuid').notNull(),
+    cropInstanceUuid: text('crop_instance_uuid').notNull(),
     // No FK: task_types live on the device as deterministic seed data.
     taskTypeId: integer('task_type_id').notNull(),
     dayOfWeek: integer('day_of_week').notNull(),
     frequencyWeeks: integer('frequency_weeks').notNull().default(1),
     startOffsetWeeks: integer('start_offset_weeks').notNull().default(0),
     createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    deletedAt: text('deleted_at'),
   },
-  (t) => [
-    primaryKey({ columns: [t.userId, t.id] }),
+  (table) => [
+    primaryKey({ columns: [table.userId, table.uuid] }),
     foreignKey({
-      columns: [t.userId, t.cropInstanceId],
-      foreignColumns: [cropInstances.userId, cropInstances.id],
+      columns: [table.userId, table.cropInstanceUuid],
+      foreignColumns: [cropInstances.userId, cropInstances.uuid],
       name: 'tasks_crop_instance_fk',
     }).onDelete('cascade'),
-    check('tasks_day_of_week_check', sql`${t.dayOfWeek} BETWEEN 0 AND 6`),
-    check('tasks_frequency_weeks_check', sql`${t.frequencyWeeks} > 0`),
-    check('tasks_start_offset_weeks_check', sql`${t.startOffsetWeeks} >= 0`),
+    check('tasks_day_of_week_check', sql`${table.dayOfWeek} BETWEEN 0 AND 6`),
+    check('tasks_frequency_weeks_check', sql`${table.frequencyWeeks} > 0`),
+    check('tasks_start_offset_weeks_check', sql`${table.startOffsetWeeks} >= 0`),
   ],
 );
 
@@ -244,18 +260,24 @@ export const taskCompletions = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    id: integer('id').notNull(),
-    taskId: integer('task_id').notNull(),
+    uuid: text('uuid').notNull(),
+    taskUuid: text('task_uuid').notNull(),
     completedDate: text('completed_date').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    deletedAt: text('deleted_at'),
   },
-  (t) => [
-    primaryKey({ columns: [t.userId, t.id] }),
+  (table) => [
+    primaryKey({ columns: [table.userId, table.uuid] }),
     foreignKey({
-      columns: [t.userId, t.taskId],
-      foreignColumns: [tasks.userId, tasks.id],
+      columns: [table.userId, table.taskUuid],
+      foreignColumns: [tasks.userId, tasks.uuid],
       name: 'task_completions_task_fk',
     }).onDelete('cascade'),
-    uniqueIndex('task_completions_task_date_unique').on(t.userId, t.taskId, t.completedDate),
+    uniqueIndex('task_completions_task_date_unique').on(
+      table.userId,
+      table.taskUuid,
+      table.completedDate,
+    ),
   ],
 );
 
@@ -265,26 +287,29 @@ export const notes = pgTable(
     userId: text('user_id')
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
-    id: integer('id').notNull(),
+    uuid: text('uuid').notNull(),
     entityType: text('entity_type').notNull(),
+    // entity_id is a polymorphic local reference whose cross-device wire form
+    // is still being settled with the iOS side (see SYNC-WIRE-CONTRACT.md).
     entityId: integer('entity_id'),
     weekDate: text('week_date'),
-    cropInstanceId: integer('crop_instance_id'),
+    cropInstanceUuid: text('crop_instance_uuid'),
     content: text('content').notNull(),
     createdAt: text('created_at').notNull(),
     updatedAt: text('updated_at').notNull(),
+    deletedAt: text('deleted_at'),
   },
-  (t) => [
-    primaryKey({ columns: [t.userId, t.id] }),
+  (table) => [
+    primaryKey({ columns: [table.userId, table.uuid] }),
     foreignKey({
-      columns: [t.userId, t.cropInstanceId],
-      foreignColumns: [cropInstances.userId, cropInstances.id],
+      columns: [table.userId, table.cropInstanceUuid],
+      foreignColumns: [cropInstances.userId, cropInstances.uuid],
       name: 'notes_crop_instance_fk',
     }).onDelete('cascade'),
     uniqueIndex('notes_week_cell_unique')
-      .on(t.userId, t.entityType, t.cropInstanceId, t.weekDate)
+      .on(table.userId, table.entityType, table.cropInstanceUuid, table.weekDate)
       .where(
-        sql`entity_type = 'week_cell' AND crop_instance_id IS NOT NULL AND week_date IS NOT NULL`,
+        sql`entity_type = 'week_cell' AND crop_instance_uuid IS NOT NULL AND week_date IS NOT NULL`,
       ),
   ],
 );

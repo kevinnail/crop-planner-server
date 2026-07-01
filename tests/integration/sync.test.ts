@@ -34,26 +34,25 @@ interface ErrorResponse {
 }
 
 interface SyncPullResponse {
-  locations: { user_id: string; id: number; name: string; order_index: number }[];
+  locations: { uuid: string; name: string; order_index: number; updated_at: string }[];
   gardens: {
-    user_id: string;
-    id: number;
-    location_id: number;
+    uuid: string;
+    location_uuid: string;
     name: string;
     record_type: string;
     order_index: number;
+    updated_at: string;
   }[];
   sections: {
-    user_id: string;
-    id: number;
-    garden_id: number;
+    uuid: string;
+    garden_uuid: string;
     name: string;
     order_index: number;
+    updated_at: string;
   }[];
   crop_instances: {
-    user_id: string;
-    id: number;
-    section_id: number;
+    uuid: string;
+    section_uuid: string;
     name: string;
     plant_count: number;
     start_date: string;
@@ -64,41 +63,43 @@ interface SyncPullResponse {
     updated_at: string;
   }[];
   crop_stages: {
-    user_id: string;
-    id: number;
-    crop_instance_id: number;
+    uuid: string;
+    crop_instance_uuid: string;
     stage_definition_id: number;
     duration_weeks: number;
     order_index: number;
+    updated_at: string;
   }[];
   tasks: {
-    user_id: string;
-    id: number;
-    crop_instance_id: number;
+    uuid: string;
+    crop_instance_uuid: string;
     task_type_id: number;
     day_of_week: number;
     frequency_weeks: number;
     start_offset_weeks: number;
     created_at: string;
+    updated_at: string;
   }[];
   task_completions: {
-    user_id: string;
-    id: number;
-    task_id: number;
+    uuid: string;
+    task_uuid: string;
     completed_date: string;
+    updated_at: string;
   }[];
   notes: {
-    user_id: string;
-    id: number;
+    uuid: string;
     entity_type: string;
     entity_id: number | null;
     week_date: string | null;
-    crop_instance_id: number | null;
+    crop_instance_uuid: string | null;
     content: string;
     created_at: string;
     updated_at: string;
   }[];
+  last_sync_at: string;
 }
+
+const SEED_TS = '2026-05-10 12:00:00.000';
 
 async function signUp(opts: {
   email: string;
@@ -133,68 +134,102 @@ async function makeActiveSubscription(userId: string, rcSuffix = userId): Promis
   });
 }
 
-async function seedFullDataset(userId: string, idBase = 0): Promise<void> {
-  const ts = '2026-05-10 12:00:00';
-  await db.insert(locations).values({ userId, id: idBase + 1, name: 'Backyard', orderIndex: 0 });
+// Seeds one full hierarchy. UUIDs are namespaced by `prefix` so two users can
+// hold rows with distinct keys in the same test.
+async function seedFullDataset(userId: string, prefix = ''): Promise<void> {
+  const namespacedUuid = (localKey: string) => `${prefix}${localKey}`;
+  await db.insert(locations).values({
+    userId,
+    uuid: namespacedUuid('loc-1'),
+    name: 'Backyard',
+    orderIndex: 0,
+    updatedAt: SEED_TS,
+  });
   await db.insert(gardens).values({
     userId,
-    id: idBase + 1,
-    locationId: idBase + 1,
+    uuid: namespacedUuid('gar-1'),
+    locationUuid: namespacedUuid('loc-1'),
     name: 'Raised Bed A',
     recordType: 'plant',
     orderIndex: 0,
+    updatedAt: SEED_TS,
   });
-  await db
-    .insert(sections)
-    .values({ userId, id: idBase + 1, gardenId: idBase + 1, name: 'North', orderIndex: 0 });
+  await db.insert(sections).values({
+    userId,
+    uuid: namespacedUuid('sec-1'),
+    gardenUuid: namespacedUuid('gar-1'),
+    name: 'North',
+    orderIndex: 0,
+    updatedAt: SEED_TS,
+  });
   await db.insert(cropInstances).values({
     userId,
-    id: idBase + 1,
-    sectionId: idBase + 1,
+    uuid: namespacedUuid('crop-1'),
+    sectionUuid: namespacedUuid('sec-1'),
     name: 'Tomato',
     plantCount: 3,
     startDate: '2026-04-01',
     recordType: 'plant',
     archived: 0,
     notes: null,
-    createdAt: ts,
-    updatedAt: ts,
+    createdAt: SEED_TS,
+    updatedAt: SEED_TS,
   });
   await db.insert(cropStages).values({
     userId,
-    id: idBase + 1,
-    cropInstanceId: idBase + 1,
+    uuid: namespacedUuid('stage-1'),
+    cropInstanceUuid: namespacedUuid('crop-1'),
     stageDefinitionId: 2,
     durationWeeks: 4,
     orderIndex: 0,
+    updatedAt: SEED_TS,
   });
   await db.insert(tasks).values({
     userId,
-    id: idBase + 1,
-    cropInstanceId: idBase + 1,
+    uuid: namespacedUuid('task-1'),
+    cropInstanceUuid: namespacedUuid('crop-1'),
     taskTypeId: 1,
     dayOfWeek: 3,
     frequencyWeeks: 1,
     startOffsetWeeks: 0,
-    createdAt: ts,
+    createdAt: SEED_TS,
+    updatedAt: SEED_TS,
   });
   await db.insert(taskCompletions).values({
     userId,
-    id: idBase + 1,
-    taskId: idBase + 1,
+    uuid: namespacedUuid('comp-1'),
+    taskUuid: namespacedUuid('task-1'),
     completedDate: '2026-05-07',
+    updatedAt: SEED_TS,
   });
   await db.insert(notes).values({
     userId,
-    id: idBase + 1,
+    uuid: namespacedUuid('note-1'),
     entityType: 'week_cell',
     entityId: null,
     weekDate: '2026-05-04',
-    cropInstanceId: idBase + 1,
+    cropInstanceUuid: namespacedUuid('crop-1'),
     content: 'Yellowing leaves',
-    createdAt: ts,
-    updatedAt: ts,
+    createdAt: SEED_TS,
+    updatedAt: SEED_TS,
   });
+}
+
+// A full crop_instances wire row, overridable per test.
+function cropInstanceRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    uuid: 'crop-1',
+    section_uuid: 'sec-1',
+    name: 'Tomato',
+    plant_count: 3,
+    start_date: '2026-04-01',
+    record_type: 'plant',
+    archived: 0,
+    notes: null,
+    created_at: SEED_TS,
+    updated_at: SEED_TS,
+    ...overrides,
+  };
 }
 
 beforeEach(async () => {
@@ -231,19 +266,18 @@ describe('GET /sync/pull', () => {
 
       expect(res.status).toBe(200);
       const body = res.body as SyncPullResponse;
-      expect(body).toEqual({
-        locations: [],
-        gardens: [],
-        sections: [],
-        crop_instances: [],
-        crop_stages: [],
-        tasks: [],
-        task_completions: [],
-        notes: [],
-      });
+      expect(body.locations).toEqual([]);
+      expect(body.gardens).toEqual([]);
+      expect(body.sections).toEqual([]);
+      expect(body.crop_instances).toEqual([]);
+      expect(body.crop_stages).toEqual([]);
+      expect(body.tasks).toEqual([]);
+      expect(body.task_completions).toEqual([]);
+      expect(body.notes).toEqual([]);
+      expect(typeof body.last_sync_at).toBe('string');
     });
 
-    it("returns the subscribed user's seeded rows with the expected shape", async () => {
+    it("returns the subscribed user's seeded rows keyed by uuid with parent uuids", async () => {
       const { userId, cookies } = await signUp({ email: 'seeded@example.com' });
       await makeActiveSubscription(userId);
       await seedFullDataset(userId);
@@ -254,74 +288,89 @@ describe('GET /sync/pull', () => {
       const body = res.body as SyncPullResponse;
 
       expect(body.locations).toEqual([
-        { user_id: userId, id: 1, name: 'Backyard', order_index: 0 },
+        { uuid: 'loc-1', name: 'Backyard', order_index: 0, updated_at: SEED_TS },
       ]);
       expect(body.gardens).toEqual([
         {
-          user_id: userId,
-          id: 1,
-          location_id: 1,
+          uuid: 'gar-1',
+          location_uuid: 'loc-1',
           name: 'Raised Bed A',
           record_type: 'plant',
           order_index: 0,
+          updated_at: SEED_TS,
         },
       ]);
       expect(body.sections).toEqual([
-        { user_id: userId, id: 1, garden_id: 1, name: 'North', order_index: 0 },
+        { uuid: 'sec-1', garden_uuid: 'gar-1', name: 'North', order_index: 0, updated_at: SEED_TS },
       ]);
       expect(body.crop_instances).toEqual([
         {
-          user_id: userId,
-          id: 1,
-          section_id: 1,
+          uuid: 'crop-1',
+          section_uuid: 'sec-1',
           name: 'Tomato',
           plant_count: 3,
           start_date: '2026-04-01',
           record_type: 'plant',
           archived: 0,
           notes: null,
-          created_at: '2026-05-10 12:00:00',
-          updated_at: '2026-05-10 12:00:00',
+          created_at: SEED_TS,
+          updated_at: SEED_TS,
         },
       ]);
       expect(body.crop_stages).toEqual([
         {
-          user_id: userId,
-          id: 1,
-          crop_instance_id: 1,
+          uuid: 'stage-1',
+          crop_instance_uuid: 'crop-1',
           stage_definition_id: 2,
           duration_weeks: 4,
           order_index: 0,
+          updated_at: SEED_TS,
         },
       ]);
       expect(body.tasks).toEqual([
         {
-          user_id: userId,
-          id: 1,
-          crop_instance_id: 1,
+          uuid: 'task-1',
+          crop_instance_uuid: 'crop-1',
           task_type_id: 1,
           day_of_week: 3,
           frequency_weeks: 1,
           start_offset_weeks: 0,
-          created_at: '2026-05-10 12:00:00',
+          created_at: SEED_TS,
+          updated_at: SEED_TS,
         },
       ]);
       expect(body.task_completions).toEqual([
-        { user_id: userId, id: 1, task_id: 1, completed_date: '2026-05-07' },
+        { uuid: 'comp-1', task_uuid: 'task-1', completed_date: '2026-05-07', updated_at: SEED_TS },
       ]);
       expect(body.notes).toEqual([
         {
-          user_id: userId,
-          id: 1,
+          uuid: 'note-1',
           entity_type: 'week_cell',
           entity_id: null,
           week_date: '2026-05-04',
-          crop_instance_id: 1,
+          crop_instance_uuid: 'crop-1',
           content: 'Yellowing leaves',
-          created_at: '2026-05-10 12:00:00',
-          updated_at: '2026-05-10 12:00:00',
+          created_at: SEED_TS,
+          updated_at: SEED_TS,
         },
       ]);
+    });
+
+    it('does not return soft-deleted (tombstoned) rows', async () => {
+      const { userId, cookies } = await signUp({ email: 'tombstone-pull@example.com' });
+      await makeActiveSubscription(userId);
+      await seedFullDataset(userId);
+      // Tombstone the location directly in the DB.
+      await db
+        .update(locations)
+        .set({ deletedAt: '2026-05-12 08:00:00.000' })
+        .where(and(eq(locations.userId, userId), eq(locations.uuid, 'loc-1')));
+
+      const res = await request(app).get('/sync/pull').set('Cookie', cookieHeader(cookies));
+
+      expect(res.status).toBe(200);
+      const body = res.body as SyncPullResponse;
+      expect(body.locations).toEqual([]);
     });
   });
 
@@ -416,42 +465,51 @@ describe('POST /sync/push', () => {
       expect(body.error).toBe('Unknown table: nonexistent');
     });
 
-    it('returns 400 when a row is missing a numeric `id`', async () => {
+    it('returns 400 when a row is missing a non-empty `uuid`', async () => {
       const { cookies } = await makeSubscribedCaller('val-3@example.com');
 
       const res = await request(app)
         .post('/sync/push')
         .set('Cookie', cookieHeader(cookies))
         .send({
-          changed: [{ table: 'locations', rows: [{ name: 'No ID', order_index: 0 }] }],
+          changed: [
+            {
+              table: 'locations',
+              rows: [{ name: 'No UUID', order_index: 0, updated_at: SEED_TS }],
+            },
+          ],
         });
 
       expect(res.status).toBe(400);
       const body = res.body as ErrorResponse;
-      expect(body.error).toBe('Row in locations missing numeric `id`');
+      expect(body.error).toBe('Row in locations missing non-empty `uuid`');
     });
 
     it('rolls back all writes when a later row fails per-field validation', async () => {
       const { userId, cookies } = await signUp({ email: 'rollback@example.com' });
       await makeActiveSubscription(userId);
 
-      // First table validates fine and would write; second table has a row
-      // with a non-string `name`, which our per-field validator rejects.
+      // locations validates fine and would write; gardens has a non-string
+      // `name`, which the per-field validator rejects after uuid/location_uuid.
       const res = await request(app)
         .post('/sync/push')
         .set('Cookie', cookieHeader(cookies))
         .send({
           changed: [
-            { table: 'locations', rows: [{ id: 1, name: 'Backyard', order_index: 0 }] },
+            {
+              table: 'locations',
+              rows: [{ uuid: 'loc-1', name: 'Backyard', order_index: 0, updated_at: SEED_TS }],
+            },
             {
               table: 'gardens',
               rows: [
                 {
-                  id: 1,
-                  location_id: 1,
+                  uuid: 'gar-1',
+                  location_uuid: 'loc-1',
                   name: 123, // invalid — should be a string
                   record_type: 'plant',
                   order_index: 0,
+                  updated_at: SEED_TS,
                 },
               ],
             },
@@ -462,8 +520,6 @@ describe('POST /sync/push', () => {
       const body = res.body as ErrorResponse;
       expect(body.error).toBe('Expected string for "gardens.name"');
 
-      // The locations row from the first change entry must not have been
-      // committed — the whole push runs inside one transaction.
       const rows = await db.select().from(locations).where(eq(locations.userId, userId));
       expect(rows).toHaveLength(0);
     });
@@ -477,16 +533,20 @@ describe('POST /sync/push', () => {
         .set('Cookie', cookieHeader(cookies))
         .send({
           changed: [
-            { table: 'locations', rows: [{ id: 1, name: 'Backyard', order_index: 0 }] },
+            {
+              table: 'locations',
+              rows: [{ uuid: 'loc-1', name: 'Backyard', order_index: 0, updated_at: SEED_TS }],
+            },
             {
               table: 'gardens',
               rows: [
                 {
-                  id: 1,
-                  location_id: 999, // invalid FK: no matching locations.id for this user
+                  uuid: 'gar-1',
+                  location_uuid: 'no-such-location', // invalid FK
                   name: 'Raised Bed A',
                   record_type: 'plant',
                   order_index: 0,
+                  updated_at: SEED_TS,
                 },
               ],
             },
@@ -503,53 +563,45 @@ describe('POST /sync/push', () => {
   });
 
   describe('happy path', () => {
-    it('upserts a new crop_instance and /sync/pull returns it', async () => {
-      const { userId, cookies } = await signUp({ email: 'push-new@example.com' });
-      await makeActiveSubscription(userId);
+    it('upserts a new hierarchy and /sync/pull returns the crop_instance', async () => {
+      const caller = await signUp({ email: 'push-new@example.com' });
+      await makeActiveSubscription(caller.userId);
 
-      const ts = '2026-05-10 12:00:00';
       const pushRes = await request(app)
         .post('/sync/push')
-        .set('Cookie', cookieHeader(cookies))
+        .set('Cookie', cookieHeader(caller.cookies))
         .send({
           changed: [
             {
               table: 'locations',
-              rows: [{ id: 1, name: 'Backyard', order_index: 0 }],
+              rows: [{ uuid: 'loc-1', name: 'Backyard', order_index: 0, updated_at: SEED_TS }],
             },
             {
               table: 'gardens',
               rows: [
                 {
-                  id: 1,
-                  location_id: 1,
+                  uuid: 'gar-1',
+                  location_uuid: 'loc-1',
                   name: 'Raised Bed A',
                   record_type: 'plant',
                   order_index: 0,
+                  updated_at: SEED_TS,
                 },
               ],
             },
             {
               table: 'sections',
-              rows: [{ id: 1, garden_id: 1, name: 'North', order_index: 0 }],
-            },
-            {
-              table: 'crop_instances',
               rows: [
                 {
-                  id: 1,
-                  section_id: 1,
-                  name: 'Tomato',
-                  plant_count: 3,
-                  start_date: '2026-04-01',
-                  record_type: 'plant',
-                  archived: 0,
-                  notes: null,
-                  created_at: ts,
-                  updated_at: ts,
+                  uuid: 'sec-1',
+                  garden_uuid: 'gar-1',
+                  name: 'North',
+                  order_index: 0,
+                  updated_at: SEED_TS,
                 },
               ],
             },
+            { table: 'crop_instances', rows: [cropInstanceRow()] },
           ],
         });
 
@@ -557,22 +609,23 @@ describe('POST /sync/push', () => {
       const pushBody = pushRes.body as PushResponse;
       expect(pushBody).toEqual({ accepted: 4, skipped: 0 });
 
-      const pullRes = await request(app).get('/sync/pull').set('Cookie', cookieHeader(cookies));
+      const pullRes = await request(app)
+        .get('/sync/pull')
+        .set('Cookie', cookieHeader(caller.cookies));
       expect(pullRes.status).toBe(200);
       const pullBody = pullRes.body as SyncPullResponse;
       expect(pullBody.crop_instances).toEqual([
         {
-          user_id: userId,
-          id: 1,
-          section_id: 1,
+          uuid: 'crop-1',
+          section_uuid: 'sec-1',
           name: 'Tomato',
           plant_count: 3,
           start_date: '2026-04-01',
           record_type: 'plant',
           archived: 0,
           notes: null,
-          created_at: ts,
-          updated_at: ts,
+          created_at: SEED_TS,
+          updated_at: SEED_TS,
         },
       ]);
     });
@@ -580,9 +633,9 @@ describe('POST /sync/push', () => {
     it('updates an existing crop_instance when incoming updated_at is newer', async () => {
       const { userId, cookies } = await signUp({ email: 'push-newer@example.com' });
       await makeActiveSubscription(userId);
-      await seedFullDataset(userId); // crop_instance id=1, updated_at='2026-05-10 12:00:00'
+      await seedFullDataset(userId);
 
-      const newer = '2026-05-11 09:00:00';
+      const newer = '2026-05-11 09:00:00.000';
       const pushRes = await request(app)
         .post('/sync/push')
         .set('Cookie', cookieHeader(cookies))
@@ -591,18 +644,12 @@ describe('POST /sync/push', () => {
             {
               table: 'crop_instances',
               rows: [
-                {
-                  id: 1,
-                  section_id: 1,
+                cropInstanceRow({
                   name: 'Tomato (renamed)',
                   plant_count: 5,
-                  start_date: '2026-04-01',
-                  record_type: 'plant',
-                  archived: 0,
                   notes: 'now with more plants',
-                  created_at: '2026-05-10 12:00:00',
                   updated_at: newer,
-                },
+                }),
               ],
             },
           ],
@@ -611,22 +658,52 @@ describe('POST /sync/push', () => {
       expect(pushRes.status).toBe(200);
       expect(pushRes.body).toEqual({ accepted: 1, skipped: 0 });
 
-      const row = await db
+      const matchingRows = await db
         .select()
         .from(cropInstances)
-        .where(and(eq(cropInstances.userId, userId), eq(cropInstances.id, 1)));
-      expect(row[0]?.name).toBe('Tomato (renamed)');
-      expect(row[0]?.plantCount).toBe(5);
-      expect(row[0]?.notes).toBe('now with more plants');
-      expect(row[0]?.updatedAt).toBe(newer);
+        .where(and(eq(cropInstances.userId, userId), eq(cropInstances.uuid, 'crop-1')));
+      expect(matchingRows[0]?.name).toBe('Tomato (renamed)');
+      expect(matchingRows[0]?.plantCount).toBe(5);
+      expect(matchingRows[0]?.notes).toBe('now with more plants');
+      expect(matchingRows[0]?.updatedAt).toBe(newer);
     });
 
     it('keeps the server version when incoming updated_at is stale', async () => {
       const { userId, cookies } = await signUp({ email: 'push-stale@example.com' });
       await makeActiveSubscription(userId);
-      await seedFullDataset(userId); // crop_instance id=1, updated_at='2026-05-10 12:00:00'
+      await seedFullDataset(userId);
 
-      const older = '2026-05-09 09:00:00';
+      const older = '2026-05-09 09:00:00.000';
+      const pushRes = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(cookies))
+        .send({
+          changed: [
+            {
+              table: 'crop_instances',
+              rows: [cropInstanceRow({ name: 'Stale name', plant_count: 99, updated_at: older })],
+            },
+          ],
+        });
+
+      expect(pushRes.status).toBe(200);
+      expect(pushRes.body).toEqual({ accepted: 0, skipped: 1 });
+
+      const matchingRows = await db
+        .select()
+        .from(cropInstances)
+        .where(and(eq(cropInstances.userId, userId), eq(cropInstances.uuid, 'crop-1')));
+      expect(matchingRows[0]?.name).toBe('Tomato');
+      expect(matchingRows[0]?.plantCount).toBe(3);
+      expect(matchingRows[0]?.updatedAt).toBe(SEED_TS);
+    });
+
+    it('pins created_at on first insert and never overwrites it on re-push', async () => {
+      const { userId, cookies } = await signUp({ email: 'created-pin@example.com' });
+      await makeActiveSubscription(userId);
+      await seedFullDataset(userId);
+
+      const newer = '2026-05-11 09:00:00.000';
       const pushRes = await request(app)
         .post('/sync/push')
         .set('Cookie', cookieHeader(cookies))
@@ -635,19 +712,125 @@ describe('POST /sync/push', () => {
             {
               table: 'crop_instances',
               rows: [
-                {
-                  id: 1,
-                  section_id: 1,
-                  name: 'Stale name',
-                  plant_count: 99,
-                  start_date: '2026-04-01',
-                  record_type: 'plant',
-                  archived: 0,
-                  notes: 'stale',
-                  created_at: '2026-05-10 12:00:00',
-                  updated_at: older,
-                },
+                cropInstanceRow({
+                  name: 'Renamed',
+                  created_at: '2099-01-01 00:00:00.000', // attempt to change created_at
+                  updated_at: newer,
+                }),
               ],
+            },
+          ],
+        });
+
+      expect(pushRes.status).toBe(200);
+      expect(pushRes.body).toEqual({ accepted: 1, skipped: 0 });
+
+      const matchingRows = await db
+        .select()
+        .from(cropInstances)
+        .where(and(eq(cropInstances.userId, userId), eq(cropInstances.uuid, 'crop-1')));
+      expect(matchingRows[0]?.createdAt).toBe(SEED_TS); // pinned, not the pushed 2099 value
+      expect(matchingRows[0]?.name).toBe('Renamed'); // other fields still update
+    });
+  });
+
+  describe('uniform last-write-wins (previously non-LWW tables)', () => {
+    it('applies LWW on locations: newer wins, stale loses', async () => {
+      const { userId, cookies } = await signUp({ email: 'lww-locations@example.com' });
+      await makeActiveSubscription(userId);
+      await seedFullDataset(userId); // loc-1, name 'Backyard', updated_at SEED_TS
+
+      // Newer update wins.
+      const newer = '2026-05-11 09:00:00.000';
+      const win = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(cookies))
+        .send({
+          changed: [
+            {
+              table: 'locations',
+              rows: [
+                { uuid: 'loc-1', name: 'Backyard (renamed)', order_index: 0, updated_at: newer },
+              ],
+            },
+          ],
+        });
+      expect(win.status).toBe(200);
+      expect(win.body).toEqual({ accepted: 1, skipped: 0 });
+
+      // Stale update loses.
+      const older = '2026-05-09 09:00:00.000';
+      const lose = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(cookies))
+        .send({
+          changed: [
+            {
+              table: 'locations',
+              rows: [{ uuid: 'loc-1', name: 'Should not win', order_index: 9, updated_at: older }],
+            },
+          ],
+        });
+      expect(lose.status).toBe(200);
+      expect(lose.body).toEqual({ accepted: 0, skipped: 1 });
+
+      const matchingRows = await db
+        .select()
+        .from(locations)
+        .where(and(eq(locations.userId, userId), eq(locations.uuid, 'loc-1')));
+      expect(matchingRows[0]?.name).toBe('Backyard (renamed)');
+      expect(matchingRows[0]?.updatedAt).toBe(newer);
+    });
+  });
+
+  describe('tombstones', () => {
+    it('applies a tombstone (deleted_at + newer updated_at); pull then omits the row', async () => {
+      const { userId, cookies } = await signUp({ email: 'tombstone-apply@example.com' });
+      await makeActiveSubscription(userId);
+      await seedFullDataset(userId);
+
+      const newer = '2026-05-11 09:00:00.000';
+      const pushRes = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(cookies))
+        .send({
+          changed: [
+            {
+              table: 'crop_instances',
+              rows: [cropInstanceRow({ updated_at: newer, deleted_at: newer })],
+            },
+          ],
+        });
+
+      expect(pushRes.status).toBe(200);
+      expect(pushRes.body).toEqual({ accepted: 1, skipped: 0 });
+
+      // Row still exists in the DB (as a tombstone) but pull hides it.
+      const matchingRows = await db
+        .select()
+        .from(cropInstances)
+        .where(and(eq(cropInstances.userId, userId), eq(cropInstances.uuid, 'crop-1')));
+      expect(matchingRows[0]?.deletedAt).toBe(newer);
+
+      const pullRes = await request(app).get('/sync/pull').set('Cookie', cookieHeader(cookies));
+      const pullBody = pullRes.body as SyncPullResponse;
+      expect(pullBody.crop_instances).toEqual([]);
+    });
+
+    it('ignores a stale tombstone (older updated_at) and keeps the row alive', async () => {
+      const { userId, cookies } = await signUp({ email: 'tombstone-stale@example.com' });
+      await makeActiveSubscription(userId);
+      await seedFullDataset(userId); // crop-1, updated_at SEED_TS, deleted_at NULL
+
+      const older = '2026-05-09 09:00:00.000';
+      const pushRes = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(cookies))
+        .send({
+          changed: [
+            {
+              table: 'crop_instances',
+              rows: [cropInstanceRow({ updated_at: older, deleted_at: older })],
             },
           ],
         });
@@ -655,89 +838,96 @@ describe('POST /sync/push', () => {
       expect(pushRes.status).toBe(200);
       expect(pushRes.body).toEqual({ accepted: 0, skipped: 1 });
 
-      const row = await db
+      const matchingRows = await db
         .select()
         .from(cropInstances)
-        .where(and(eq(cropInstances.userId, userId), eq(cropInstances.id, 1)));
-      expect(row[0]?.name).toBe('Tomato');
-      expect(row[0]?.plantCount).toBe(3);
-      expect(row[0]?.notes).toBeNull();
-      expect(row[0]?.updatedAt).toBe('2026-05-10 12:00:00');
+        .where(and(eq(cropInstances.userId, userId), eq(cropInstances.uuid, 'crop-1')));
+      expect(matchingRows[0]?.deletedAt).toBeNull();
+
+      const pullRes = await request(app).get('/sync/pull').set('Cookie', cookieHeader(cookies));
+      const pullBody = pullRes.body as SyncPullResponse;
+      expect(pullBody.crop_instances).toHaveLength(1);
     });
   });
 
   describe('bulk upload', () => {
     it('accepts a full local DB across all 8 tables', async () => {
-      const { userId, cookies } = await signUp({ email: 'bulk@example.com' });
-      await makeActiveSubscription(userId);
+      const realCaller = await signUp({ email: 'bulk@example.com' });
+      await makeActiveSubscription(realCaller.userId);
 
-      const ts = '2026-05-10 12:00:00';
-      const N = 30; // 30 rows per table × 8 tables = 240 rows
-      const locationsRows = Array.from({ length: N }, (_, i) => ({
-        id: i + 1,
-        name: `Location ${String(i + 1)}`,
-        order_index: i,
+      const timestamp = SEED_TS;
+      const rowsPerTable = 30; // 30 rows per table × 8 tables = 240 rows
+      const locationsRows = Array.from({ length: rowsPerTable }, (_unused, index) => ({
+        uuid: `loc-${String(index + 1)}`,
+        name: `Location ${String(index + 1)}`,
+        order_index: index,
+        updated_at: timestamp,
       }));
-      const gardensRows = Array.from({ length: N }, (_, i) => ({
-        id: i + 1,
-        location_id: i + 1,
-        name: `Garden ${String(i + 1)}`,
+      const gardensRows = Array.from({ length: rowsPerTable }, (_unused, index) => ({
+        uuid: `gar-${String(index + 1)}`,
+        location_uuid: `loc-${String(index + 1)}`,
+        name: `Garden ${String(index + 1)}`,
         record_type: 'plant',
-        order_index: i,
+        order_index: index,
+        updated_at: timestamp,
       }));
-      const sectionsRows = Array.from({ length: N }, (_, i) => ({
-        id: i + 1,
-        garden_id: i + 1,
-        name: `Section ${String(i + 1)}`,
-        order_index: i,
+      const sectionsRows = Array.from({ length: rowsPerTable }, (_unused, index) => ({
+        uuid: `sec-${String(index + 1)}`,
+        garden_uuid: `gar-${String(index + 1)}`,
+        name: `Section ${String(index + 1)}`,
+        order_index: index,
+        updated_at: timestamp,
       }));
-      const cropInstancesRows = Array.from({ length: N }, (_, i) => ({
-        id: i + 1,
-        section_id: i + 1,
-        name: `Crop ${String(i + 1)}`,
+      const cropInstancesRows = Array.from({ length: rowsPerTable }, (_unused, index) => ({
+        uuid: `crop-${String(index + 1)}`,
+        section_uuid: `sec-${String(index + 1)}`,
+        name: `Crop ${String(index + 1)}`,
         plant_count: 1,
         start_date: '2026-04-01',
         record_type: 'plant',
         archived: 0,
         notes: null,
-        created_at: ts,
-        updated_at: ts,
+        created_at: timestamp,
+        updated_at: timestamp,
       }));
-      const cropStagesRows = Array.from({ length: N }, (_, i) => ({
-        id: i + 1,
-        crop_instance_id: i + 1,
+      const cropStagesRows = Array.from({ length: rowsPerTable }, (_unused, index) => ({
+        uuid: `stage-${String(index + 1)}`,
+        crop_instance_uuid: `crop-${String(index + 1)}`,
         stage_definition_id: 1,
         duration_weeks: 4,
         order_index: 0,
+        updated_at: timestamp,
       }));
-      const tasksRows = Array.from({ length: N }, (_, i) => ({
-        id: i + 1,
-        crop_instance_id: i + 1,
+      const tasksRows = Array.from({ length: rowsPerTable }, (_unused, index) => ({
+        uuid: `task-${String(index + 1)}`,
+        crop_instance_uuid: `crop-${String(index + 1)}`,
         task_type_id: 1,
-        day_of_week: i % 7,
+        day_of_week: index % 7,
         frequency_weeks: 1,
         start_offset_weeks: 0,
-        created_at: ts,
+        created_at: timestamp,
+        updated_at: timestamp,
       }));
-      const taskCompletionsRows = Array.from({ length: N }, (_, i) => ({
-        id: i + 1,
-        task_id: i + 1,
+      const taskCompletionsRows = Array.from({ length: rowsPerTable }, (_unused, index) => ({
+        uuid: `comp-${String(index + 1)}`,
+        task_uuid: `task-${String(index + 1)}`,
         completed_date: '2026-05-07',
+        updated_at: timestamp,
       }));
-      const notesRows = Array.from({ length: N }, (_, i) => ({
-        id: i + 1,
+      const notesRows = Array.from({ length: rowsPerTable }, (_unused, index) => ({
+        uuid: `note-${String(index + 1)}`,
         entity_type: 'crop',
-        entity_id: i + 1,
+        entity_id: index + 1,
         week_date: null,
-        crop_instance_id: i + 1,
-        content: `Note ${String(i + 1)}`,
-        created_at: ts,
-        updated_at: ts,
+        crop_instance_uuid: `crop-${String(index + 1)}`,
+        content: `Note ${String(index + 1)}`,
+        created_at: timestamp,
+        updated_at: timestamp,
       }));
 
       const pushRes = await request(app)
         .post('/sync/push')
-        .set('Cookie', cookieHeader(cookies))
+        .set('Cookie', cookieHeader(realCaller.cookies))
         .send({
           changed: [
             // Intentionally sent out of dependency order — the server sorts.
@@ -753,19 +943,21 @@ describe('POST /sync/push', () => {
         });
 
       expect(pushRes.status).toBe(200);
-      expect(pushRes.body).toEqual({ accepted: N * 8, skipped: 0 });
+      expect(pushRes.body).toEqual({ accepted: rowsPerTable * 8, skipped: 0 });
 
-      const pullRes = await request(app).get('/sync/pull').set('Cookie', cookieHeader(cookies));
+      const pullRes = await request(app)
+        .get('/sync/pull')
+        .set('Cookie', cookieHeader(realCaller.cookies));
       expect(pullRes.status).toBe(200);
       const pullBody = pullRes.body as SyncPullResponse;
-      expect(pullBody.locations).toHaveLength(N);
-      expect(pullBody.gardens).toHaveLength(N);
-      expect(pullBody.sections).toHaveLength(N);
-      expect(pullBody.crop_instances).toHaveLength(N);
-      expect(pullBody.crop_stages).toHaveLength(N);
-      expect(pullBody.tasks).toHaveLength(N);
-      expect(pullBody.task_completions).toHaveLength(N);
-      expect(pullBody.notes).toHaveLength(N);
+      expect(pullBody.locations).toHaveLength(rowsPerTable);
+      expect(pullBody.gardens).toHaveLength(rowsPerTable);
+      expect(pullBody.sections).toHaveLength(rowsPerTable);
+      expect(pullBody.crop_instances).toHaveLength(rowsPerTable);
+      expect(pullBody.crop_stages).toHaveLength(rowsPerTable);
+      expect(pullBody.tasks).toHaveLength(rowsPerTable);
+      expect(pullBody.task_completions).toHaveLength(rowsPerTable);
+      expect(pullBody.notes).toHaveLength(rowsPerTable);
     });
   });
 
@@ -788,20 +980,27 @@ describe('POST /sync/push', () => {
           changed: [
             {
               table: 'locations',
-              rows: [{ user_id: victimId, id: 42, name: 'Forged', order_index: 0 }],
+              rows: [
+                {
+                  user_id: victimId,
+                  uuid: 'loc-forged',
+                  name: 'Forged',
+                  order_index: 0,
+                  updated_at: SEED_TS,
+                },
+              ],
             },
           ],
         });
 
       expect(pushRes.status).toBe(200);
 
-      // Row was written under the caller, not the forged user_id.
       const callerRows = await db
         .select()
         .from(locations)
         .where(eq(locations.userId, caller.userId));
       expect(callerRows).toHaveLength(1);
-      expect(callerRows[0]?.id).toBe(42);
+      expect(callerRows[0]?.uuid).toBe('loc-forged');
       expect(callerRows[0]?.name).toBe('Forged');
 
       const victimRows = await db.select().from(locations).where(eq(locations.userId, victimId));

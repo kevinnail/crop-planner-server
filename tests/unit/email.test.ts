@@ -34,7 +34,7 @@ describe('sendEmail', () => {
 
     expect(sendMock).toHaveBeenCalledTimes(1);
     expect(sendMock).toHaveBeenCalledWith({
-      from: 'noreply@example.com',
+      from: 'Crop Planner <noreply@example.com>',
       to: 'user@example.com',
       subject: 'Reset your password',
       text: 'Reset link: https://example.com/reset?token=abc',

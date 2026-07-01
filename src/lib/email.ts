@@ -13,6 +13,6 @@ export async function sendEmail({ to, subject, text }: SendEmailParams): Promise
   const from = process.env.EMAIL_FROM;
   if (!from) throw new Error('EMAIL_FROM is not set');
 
-  const { error } = await resend.emails.send({ from, to, subject, text });
+  const { error } = await resend.emails.send({ from: `Crop Planner <${from}>`, to, subject, text });
   if (error) throw new Error(`Resend error: ${error.name}: ${error.message}`);
 }

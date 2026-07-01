@@ -22,7 +22,8 @@
     "manual:password-reset": "tsx scripts/manual-password-reset.ts"
   },
   "dependencies": {
-    "better-auth": "^1.6.10",
+    "@better-auth/expo": "1.6.14",
+    "better-auth": "1.6.14",
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.45.2",
     "express": "^4.21.0",
@@ -44,5 +45,8 @@
     "typescript": "^5.3.3",
     "typescript-eslint": "^8.59.2",
     "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "@better-auth/core": "1.6.14"
   }
 }

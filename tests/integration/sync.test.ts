@@ -89,7 +89,6 @@ interface SyncPullResponse {
   notes: {
     uuid: string;
     entity_type: string;
-    entity_id: number | null;
     week_date: string | null;
     crop_instance_uuid: string | null;
     content: string;
@@ -206,7 +205,6 @@ async function seedFullDataset(userId: string, prefix = ''): Promise<void> {
     userId,
     uuid: namespacedUuid('note-1'),
     entityType: 'week_cell',
-    entityId: null,
     weekDate: '2026-05-04',
     cropInstanceUuid: namespacedUuid('crop-1'),
     content: 'Yellowing leaves',
@@ -346,7 +344,6 @@ describe('GET /sync/pull', () => {
         {
           uuid: 'note-1',
           entity_type: 'week_cell',
-          entity_id: null,
           week_date: '2026-05-04',
           crop_instance_uuid: 'crop-1',
           content: 'Yellowing leaves',
@@ -916,8 +913,7 @@ describe('POST /sync/push', () => {
       }));
       const notesRows = Array.from({ length: rowsPerTable }, (_unused, index) => ({
         uuid: `note-${String(index + 1)}`,
-        entity_type: 'crop',
-        entity_id: index + 1,
+        entity_type: 'week_cell',
         week_date: null,
         crop_instance_uuid: `crop-${String(index + 1)}`,
         content: `Note ${String(index + 1)}`,

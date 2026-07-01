@@ -1,5 +1,5 @@
 {
-  "id": "e4b18a34-520d-41c6-8ab3-0b77e7b0dc53",
+  "id": "c2d4065b-b4e6-4572-a1b4-cd267a7cafeb",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -553,12 +553,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "entity_id": {
-          "name": "entity_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": false
         },
         "week_date": {
           "name": "week_date",

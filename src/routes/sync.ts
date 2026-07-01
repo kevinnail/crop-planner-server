@@ -129,7 +129,6 @@ router.get(
         .select({
           uuid: notes.uuid,
           entity_type: notes.entityType,
-          entity_id: notes.entityId,
           week_date: notes.weekDate,
           crop_instance_uuid: notes.cropInstanceUuid,
           content: notes.content,
@@ -210,11 +209,6 @@ function asInt(value: unknown, field: string): number {
 
 function asIntOr(value: unknown, field: string, fallback: number): number {
   if (value == null) return fallback;
-  return asInt(value, field);
-}
-
-function asIntOrNull(value: unknown, field: string): number | null {
-  if (value == null) return null;
   return asInt(value, field);
 }
 
@@ -631,7 +625,6 @@ const pushHandlers: Record<PushTableName, PushHandler> = {
       userId,
       uuid: asUuid(row.uuid, 'notes.uuid'),
       entityType: asString(row.entity_type, 'notes.entity_type'),
-      entityId: asIntOrNull(row.entity_id, 'notes.entity_id'),
       weekDate: asStringOrNull(row.week_date, 'notes.week_date'),
       cropInstanceUuid: asStringOrNull(row.crop_instance_uuid, 'notes.crop_instance_uuid'),
       content: asString(row.content, 'notes.content'),
@@ -663,7 +656,6 @@ const pushHandlers: Record<PushTableName, PushHandler> = {
           target: [notes.userId, notes.uuid],
           set: {
             entityType: sql`excluded.entity_type`,
-            entityId: sql`excluded.entity_id`,
             weekDate: sql`excluded.week_date`,
             cropInstanceUuid: sql`excluded.crop_instance_uuid`,
             content: sql`excluded.content`,

@@ -66,6 +66,17 @@ CREATE TABLE "locations" (
 	CONSTRAINT "locations_user_id_uuid_pk" PRIMARY KEY("user_id","uuid")
 );
 --> statement-breakpoint
+CREATE TABLE "note_images" (
+	"user_id" text NOT NULL,
+	"uuid" text NOT NULL,
+	"note_uuid" text NOT NULL,
+	"s3_key" text NOT NULL,
+	"created_at" text NOT NULL,
+	"updated_at" text NOT NULL,
+	"deleted_at" text,
+	CONSTRAINT "note_images_user_id_uuid_pk" PRIMARY KEY("user_id","uuid")
+);
+--> statement-breakpoint
 CREATE TABLE "notes" (
 	"user_id" text NOT NULL,
 	"uuid" text NOT NULL,
@@ -168,6 +179,8 @@ ALTER TABLE "crop_stages" ADD CONSTRAINT "crop_stages_crop_instance_fk" FOREIGN 
 ALTER TABLE "gardens" ADD CONSTRAINT "gardens_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "gardens" ADD CONSTRAINT "gardens_location_fk" FOREIGN KEY ("user_id","location_uuid") REFERENCES "public"."locations"("user_id","uuid") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "locations" ADD CONSTRAINT "locations_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "note_images" ADD CONSTRAINT "note_images_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "note_images" ADD CONSTRAINT "note_images_note_fk" FOREIGN KEY ("user_id","note_uuid") REFERENCES "public"."notes"("user_id","uuid") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "notes" ADD CONSTRAINT "notes_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "notes" ADD CONSTRAINT "notes_crop_instance_fk" FOREIGN KEY ("user_id","crop_instance_uuid") REFERENCES "public"."crop_instances"("user_id","uuid") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sections" ADD CONSTRAINT "sections_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

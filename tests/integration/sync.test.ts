@@ -8,6 +8,23 @@ vi.mock('resend', () => ({
   })),
 }));
 
+// Mock the S3 wrapper so tests never touch AWS. buildImageKey/CONTENT_TYPE_EXT
+// keep real behaviour (pure string logic); the network-touching functions are
+// spies we assert against.
+vi.mock('../../src/lib/s3', () => ({
+  CONTENT_TYPE_EXT: {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/heic': 'heic',
+  },
+  buildImageKey: (userId: string, uuid: string, ext: string): string =>
+    `note-images/${userId}/${uuid}.${ext}`,
+  createUploadUrl: vi.fn((key: string) => Promise.resolve(`https://s3.test/upload/${key}`)),
+  createDownloadUrl: vi.fn((key: string) => Promise.resolve(`https://s3.test/download/${key}`)),
+  deleteImageObject: vi.fn(() => Promise.resolve()),
+}));
+
 import app from '../../src/app';
 import { db } from '../../src/db/connection';
 import {
@@ -21,7 +38,9 @@ import {
   tasks,
   taskCompletions,
   notes,
+  noteImages,
 } from '../../src/db/schema';
+import { deleteImageObject } from '../../src/lib/s3';
 import { resetDb } from '../helpers/db';
 
 interface SignUpResponse {
@@ -92,6 +111,13 @@ interface SyncPullResponse {
     week_date: string | null;
     crop_instance_uuid: string | null;
     content: string;
+    created_at: string;
+    updated_at: string;
+  }[];
+  note_images: {
+    uuid: string;
+    note_uuid: string;
+    s3_key: string;
     created_at: string;
     updated_at: string;
   }[];
@@ -211,6 +237,14 @@ async function seedFullDataset(userId: string, prefix = ''): Promise<void> {
     createdAt: SEED_TS,
     updatedAt: SEED_TS,
   });
+  await db.insert(noteImages).values({
+    userId,
+    uuid: namespacedUuid('img-1'),
+    noteUuid: namespacedUuid('note-1'),
+    s3Key: `note-images/${userId}/${namespacedUuid('img-1')}.jpg`,
+    createdAt: SEED_TS,
+    updatedAt: SEED_TS,
+  });
 }
 
 // A full crop_instances wire row, overridable per test.
@@ -232,6 +266,7 @@ function cropInstanceRow(overrides: Record<string, unknown> = {}): Record<string
 
 beforeEach(async () => {
   await resetDb();
+  vi.clearAllMocks();
 });
 
 describe('GET /sync/pull', () => {
@@ -272,6 +307,7 @@ describe('GET /sync/pull', () => {
       expect(body.tasks).toEqual([]);
       expect(body.task_completions).toEqual([]);
       expect(body.notes).toEqual([]);
+      expect(body.note_images).toEqual([]);
       expect(typeof body.last_sync_at).toBe('string');
     });
 
@@ -351,6 +387,15 @@ describe('GET /sync/pull', () => {
           updated_at: SEED_TS,
         },
       ]);
+      expect(body.note_images).toEqual([
+        {
+          uuid: 'img-1',
+          note_uuid: 'note-1',
+          s3_key: `note-images/${userId}/img-1.jpg`,
+          created_at: SEED_TS,
+          updated_at: SEED_TS,
+        },
+      ]);
     });
 
     it('does not return soft-deleted (tombstoned) rows', async () => {
@@ -396,6 +441,7 @@ describe('GET /sync/pull', () => {
       expect(body.tasks).toEqual([]);
       expect(body.task_completions).toEqual([]);
       expect(body.notes).toEqual([]);
+      expect(body.note_images).toEqual([]);
     });
   });
 });
@@ -844,6 +890,198 @@ describe('POST /sync/push', () => {
       const pullRes = await request(app).get('/sync/pull').set('Cookie', cookieHeader(cookies));
       const pullBody = pullRes.body as SyncPullResponse;
       expect(pullBody.crop_instances).toHaveLength(1);
+    });
+  });
+
+  describe('note_images', () => {
+    // A full note_images wire row for an image belonging to the seeded note-1.
+    function noteImageRow(
+      userId: string,
+      overrides: Record<string, unknown> = {},
+    ): Record<string, unknown> {
+      return {
+        uuid: 'img-1',
+        note_uuid: 'note-1',
+        s3_key: `note-images/${userId}/img-1.jpg`,
+        created_at: SEED_TS,
+        updated_at: SEED_TS,
+        ...overrides,
+      };
+    }
+
+    it('upserts a new note_images row and pull returns it', async () => {
+      const { userId, cookies } = await signUp({ email: 'img-new@example.com' });
+      await makeActiveSubscription(userId);
+      await seedFullDataset(userId); // provides parent note-1 (and an img-1)
+
+      const pushRes = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(cookies))
+        .send({
+          changed: [
+            {
+              table: 'note_images',
+              rows: [
+                {
+                  uuid: 'img-2',
+                  note_uuid: 'note-1',
+                  s3_key: `note-images/${userId}/img-2.png`,
+                  created_at: SEED_TS,
+                  updated_at: SEED_TS,
+                },
+              ],
+            },
+          ],
+        });
+
+      expect(pushRes.status).toBe(200);
+      expect(pushRes.body).toEqual({ accepted: 1, skipped: 0 });
+      expect(vi.mocked(deleteImageObject)).not.toHaveBeenCalled();
+
+      const pullRes = await request(app).get('/sync/pull').set('Cookie', cookieHeader(cookies));
+      const pullBody = pullRes.body as SyncPullResponse;
+      expect(pullBody.note_images).toEqual(
+        expect.arrayContaining([
+          {
+            uuid: 'img-2',
+            note_uuid: 'note-1',
+            s3_key: `note-images/${userId}/img-2.png`,
+            created_at: SEED_TS,
+            updated_at: SEED_TS,
+          },
+        ]),
+      );
+    });
+
+    it('applies LWW: newer wins, stale is skipped', async () => {
+      const { userId, cookies } = await signUp({ email: 'img-lww@example.com' });
+      await makeActiveSubscription(userId);
+      await seedFullDataset(userId);
+
+      const newer = '2026-05-11 09:00:00.000';
+      const win = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(cookies))
+        .send({
+          changed: [
+            {
+              table: 'note_images',
+              rows: [
+                noteImageRow(userId, {
+                  s3_key: `note-images/${userId}/img-1-renamed.jpg`,
+                  updated_at: newer,
+                }),
+              ],
+            },
+          ],
+        });
+      expect(win.status).toBe(200);
+      expect(win.body).toEqual({ accepted: 1, skipped: 0 });
+
+      const older = '2026-05-09 09:00:00.000';
+      const lose = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(cookies))
+        .send({
+          changed: [
+            {
+              table: 'note_images',
+              rows: [noteImageRow(userId, { s3_key: 'should-not-win', updated_at: older })],
+            },
+          ],
+        });
+      expect(lose.status).toBe(200);
+      expect(lose.body).toEqual({ accepted: 0, skipped: 1 });
+
+      const matchingRows = await db
+        .select()
+        .from(noteImages)
+        .where(and(eq(noteImages.userId, userId), eq(noteImages.uuid, 'img-1')));
+      expect(matchingRows[0]?.s3Key).toBe(`note-images/${userId}/img-1-renamed.jpg`);
+    });
+
+    it('deletes the S3 object after commit when a tombstone wins, and pull omits the row', async () => {
+      const { userId, cookies } = await signUp({ email: 'img-tombstone@example.com' });
+      await makeActiveSubscription(userId);
+      await seedFullDataset(userId);
+
+      const newer = '2026-05-11 09:00:00.000';
+      const pushRes = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(cookies))
+        .send({
+          changed: [
+            {
+              table: 'note_images',
+              rows: [noteImageRow(userId, { updated_at: newer, deleted_at: newer })],
+            },
+          ],
+        });
+
+      expect(pushRes.status).toBe(200);
+      expect(pushRes.body).toEqual({ accepted: 1, skipped: 0 });
+      expect(vi.mocked(deleteImageObject)).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(deleteImageObject)).toHaveBeenCalledWith(`note-images/${userId}/img-1.jpg`);
+
+      const pullRes = await request(app).get('/sync/pull').set('Cookie', cookieHeader(cookies));
+      const pullBody = pullRes.body as SyncPullResponse;
+      expect(pullBody.note_images).toEqual([]);
+    });
+
+    it('does not delete the S3 object for a stale tombstone; the row stays alive', async () => {
+      const { userId, cookies } = await signUp({ email: 'img-stale@example.com' });
+      await makeActiveSubscription(userId);
+      await seedFullDataset(userId);
+
+      const older = '2026-05-09 09:00:00.000';
+      const pushRes = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(cookies))
+        .send({
+          changed: [
+            {
+              table: 'note_images',
+              rows: [noteImageRow(userId, { updated_at: older, deleted_at: older })],
+            },
+          ],
+        });
+
+      expect(pushRes.status).toBe(200);
+      expect(pushRes.body).toEqual({ accepted: 0, skipped: 1 });
+      expect(vi.mocked(deleteImageObject)).not.toHaveBeenCalled();
+
+      const pullRes = await request(app).get('/sync/pull').set('Cookie', cookieHeader(cookies));
+      const pullBody = pullRes.body as SyncPullResponse;
+      expect(pullBody.note_images).toHaveLength(1);
+    });
+
+    it('still returns 200 when the best-effort S3 delete fails', async () => {
+      const { userId, cookies } = await signUp({ email: 'img-s3fail@example.com' });
+      await makeActiveSubscription(userId);
+      await seedFullDataset(userId);
+      vi.mocked(deleteImageObject).mockRejectedValueOnce(new Error('s3 down'));
+
+      const newer = '2026-05-11 09:00:00.000';
+      const pushRes = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(cookies))
+        .send({
+          changed: [
+            {
+              table: 'note_images',
+              rows: [noteImageRow(userId, { updated_at: newer, deleted_at: newer })],
+            },
+          ],
+        });
+
+      // The S3 delete rejected, but the push still succeeds and the tombstone
+      // is persisted (pull omits the row).
+      expect(pushRes.status).toBe(200);
+      expect(pushRes.body).toEqual({ accepted: 1, skipped: 0 });
+
+      const pullRes = await request(app).get('/sync/pull').set('Cookie', cookieHeader(cookies));
+      const pullBody = pullRes.body as SyncPullResponse;
+      expect(pullBody.note_images).toEqual([]);
     });
   });
 

@@ -90,6 +90,11 @@ PASSWORD_RESET_REDIRECT_URL=cropplanner://reset-password
 REVENUECAT_WEBHOOK_AUTH_HEADER=
 RESEND_API_KEY=
 EMAIL_FROM=
+# Note-image sync (Slice 10) — private S3 bucket + scoped IAM user
+AWS_REGION=
+AWS_S3_BUCKET=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
 ```
 
 Stripe and Next.js website env vars (`STRIPE_*`, `ENABLE_STRIPE_EXTERNAL_LINK`, `NEXT_PUBLIC_API_URL`) are deferred — see `PLAN.md` Future Work.

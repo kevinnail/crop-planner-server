@@ -4,3 +4,4 @@ backend-starter
 node_modules
 dist
 coverage
+.claude/settings.local.json

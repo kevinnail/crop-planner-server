@@ -13,6 +13,7 @@ import {
   tasks,
   taskCompletions,
   notes,
+  noteImages,
 } from '../../src/db/schema';
 
 /**
@@ -21,6 +22,7 @@ import {
  * gets a clean DB without each file repeating the list.
  */
 export async function resetDb(): Promise<void> {
+  await db.delete(noteImages);
   await db.delete(taskCompletions);
   await db.delete(cropStages);
   await db.delete(notes);

@@ -10,10 +10,18 @@ import {
   tasks,
   taskCompletions,
   notes,
+  noteImages,
 } from '../db/schema';
 import { asyncHandler } from '../lib/asyncHandler';
 import { requireAuth } from '../middleware/requireAuth';
 import { checkSubscription } from '../middleware/checkSubscription';
+import {
+  CONTENT_TYPE_EXT,
+  buildImageKey,
+  createUploadUrl,
+  createDownloadUrl,
+  deleteImageObject,
+} from '../lib/s3';
 
 const router = Router();
 
@@ -46,6 +54,7 @@ router.get(
       taskRows,
       taskCompletionRows,
       noteRows,
+      noteImageRows,
     ] = await Promise.all([
       db
         .select({
@@ -137,6 +146,16 @@ router.get(
         })
         .from(notes)
         .where(and(eq(notes.userId, userId), isNull(notes.deletedAt))),
+      db
+        .select({
+          uuid: noteImages.uuid,
+          note_uuid: noteImages.noteUuid,
+          s3_key: noteImages.s3Key,
+          created_at: noteImages.createdAt,
+          updated_at: noteImages.updatedAt,
+        })
+        .from(noteImages)
+        .where(and(eq(noteImages.userId, userId), isNull(noteImages.deletedAt))),
     ]);
 
     res.status(200).json({
@@ -148,6 +167,7 @@ router.get(
       tasks: taskRows,
       task_completions: taskCompletionRows,
       notes: noteRows,
+      note_images: noteImageRows,
       last_sync_at: new Date().toISOString(),
     });
   }),
@@ -175,6 +195,7 @@ const PUSH_TABLE_ORDER = [
   'tasks',
   'task_completions',
   'notes',
+  'note_images',
 ] as const;
 type PushTableName = (typeof PUSH_TABLE_ORDER)[number];
 const KNOWN_TABLE_NAMES = new Set<string>(PUSH_TABLE_ORDER);
@@ -187,6 +208,9 @@ interface ChangeEntry {
 interface PushResult {
   accepted: number;
   skipped: number;
+  // Only note_images sets this: the s3_keys of tombstones that won last-write-
+  // wins this push. Their S3 objects are deleted after the transaction commits.
+  tombstonedKeys?: string[];
 }
 
 class BadRequestError extends Error {
@@ -667,6 +691,55 @@ const pushHandlers: Record<PushTableName, PushHandler> = {
     }
     return { accepted: toApply.length, skipped };
   },
+
+  note_images: async (transaction, userId, rows) => {
+    const values = rows.map((row) => ({
+      userId,
+      uuid: asUuid(row.uuid, 'note_images.uuid'),
+      noteUuid: asUuid(row.note_uuid, 'note_images.note_uuid'),
+      s3Key: asString(row.s3_key, 'note_images.s3_key'),
+      createdAt: asString(row.created_at, 'note_images.created_at'),
+      updatedAt: asString(row.updated_at, 'note_images.updated_at'),
+      deletedAt: asStringOrNull(row.deleted_at, 'note_images.deleted_at'),
+    }));
+    const existingRows = await transaction
+      .select({ uuid: noteImages.uuid, updatedAt: noteImages.updatedAt })
+      .from(noteImages)
+      .where(
+        and(
+          eq(noteImages.userId, userId),
+          inArray(
+            noteImages.uuid,
+            values.map((value) => value.uuid),
+          ),
+        ),
+      );
+    const { toApply, skipped } = partitionByLastWriteWins(
+      values,
+      new Map(existingRows.map((existingRow) => [existingRow.uuid, existingRow.updatedAt])),
+    );
+    if (toApply.length > 0) {
+      await transaction
+        .insert(noteImages)
+        .values(toApply)
+        .onConflictDoUpdate({
+          target: [noteImages.userId, noteImages.uuid],
+          set: {
+            noteUuid: sql`excluded.note_uuid`,
+            s3Key: sql`excluded.s3_key`,
+            // created_at is pinned — never overwritten on re-push.
+            updatedAt: sql`excluded.updated_at`,
+            deletedAt: sql`excluded.deleted_at`,
+          },
+        });
+    }
+    // A winning tombstone (deleted_at set on a row that won LWW) means the S3
+    // object should be garbage-collected after the transaction commits.
+    const tombstonedKeys = toApply
+      .filter((value) => value.deletedAt !== null)
+      .map((value) => value.s3Key);
+    return { accepted: toApply.length, skipped, tombstonedKeys };
+  },
 };
 
 router.post(
@@ -688,6 +761,7 @@ router.post(
 
     let accepted = 0;
     let skipped = 0;
+    const keysToDeleteFromS3: string[] = [];
 
     try {
       await db.transaction(async (transaction) => {
@@ -697,6 +771,7 @@ router.post(
           const result = await pushHandlers[tableName](transaction, userId, change.rows);
           accepted += result.accepted;
           skipped += result.skipped;
+          if (result.tombstonedKeys) keysToDeleteFromS3.push(...result.tombstonedKeys);
         }
       });
     } catch (error) {
@@ -707,7 +782,81 @@ router.post(
       throw error;
     }
 
+    // Delete-on-tombstone GC runs only after the transaction commits. A failed
+    // S3 delete never fails the push — it just leaves an orphan object; the DB
+    // row stays tombstoned so a stale re-push can't resurrect it.
+    for (const key of keysToDeleteFromS3) {
+      try {
+        await deleteImageObject(key);
+      } catch (error) {
+        console.error(`Failed to delete tombstoned S3 object "${key}":`, error);
+      }
+    }
+
     res.status(200).json({ accepted, skipped });
+  }),
+);
+
+// Image transfer uses presigned S3 URLs: the binary never rides push/pull, only
+// the `s3_key` reference does. Both endpoints share the /sync auth + active-
+// subscription gate. The server constructs the user-scoped key so a caller can
+// only ever touch objects under their own `note-images/{userId}/` prefix.
+
+router.post(
+  '/image/upload-url',
+  requireAuth,
+  checkSubscription,
+  asyncHandler(async (req, res) => {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const body = req.body as { uuid?: unknown; content_type?: unknown };
+    if (typeof body.uuid !== 'string' || body.uuid.length === 0) {
+      res.status(400).json({ error: 'Expected non-empty `uuid`' });
+      return;
+    }
+    const contentType = typeof body.content_type === 'string' ? body.content_type : '';
+    const ext = CONTENT_TYPE_EXT[contentType];
+    if (ext === undefined) {
+      res.status(400).json({ error: 'Unsupported `content_type`' });
+      return;
+    }
+
+    const s3Key = buildImageKey(userId, body.uuid, ext);
+    const uploadUrl = await createUploadUrl(s3Key, contentType);
+
+    res.status(200).json({ upload_url: uploadUrl, s3_key: s3Key });
+  }),
+);
+
+router.post(
+  '/image/download-url',
+  requireAuth,
+  checkSubscription,
+  asyncHandler(async (req, res) => {
+    const userId = req.userId;
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const body = req.body as { s3_key?: unknown };
+    if (typeof body.s3_key !== 'string' || body.s3_key.length === 0) {
+      res.status(400).json({ error: 'Expected non-empty `s3_key`' });
+      return;
+    }
+    // IDOR gate: a caller may only download keys under their own prefix. No S3
+    // call is needed to reject.
+    if (!body.s3_key.startsWith(`note-images/${userId}/`)) {
+      res.status(403).json({ error: 'Forbidden' });
+      return;
+    }
+
+    const downloadUrl = await createDownloadUrl(body.s3_key);
+    res.status(200).json({ download_url: downloadUrl });
   }),
 );
 

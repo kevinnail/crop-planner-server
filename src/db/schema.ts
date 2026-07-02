@@ -288,10 +288,11 @@ export const notes = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     uuid: text('uuid').notNull(),
+    // entity_type is always 'week_cell' today; kept for the unique index and
+    // to leave room for future note kinds. entity_id was dropped — it was a
+    // dead polymorphic local integer that can't survive cross-device (iOS
+    // confirmed no writer). Identity is (crop_instance_uuid, week_date).
     entityType: text('entity_type').notNull(),
-    // entity_id is a polymorphic local reference whose cross-device wire form
-    // is still being settled with the iOS side (see SYNC-WIRE-CONTRACT.md).
-    entityId: integer('entity_id'),
     weekDate: text('week_date'),
     cropInstanceUuid: text('crop_instance_uuid'),
     content: text('content').notNull(),

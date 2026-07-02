@@ -70,7 +70,6 @@ CREATE TABLE "notes" (
 	"user_id" text NOT NULL,
 	"uuid" text NOT NULL,
 	"entity_type" text NOT NULL,
-	"entity_id" integer,
 	"week_date" text,
 	"crop_instance_uuid" text,
 	"content" text NOT NULL,

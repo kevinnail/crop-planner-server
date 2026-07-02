@@ -1,5 +1,5 @@
 {
-  "id": "c2d4065b-b4e6-4572-a1b4-cd267a7cafeb",
+  "id": "36775c6a-d944-4029-a069-d1f3b1bdd265",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -521,6 +521,98 @@
       "compositePrimaryKeys": {
         "locations_user_id_uuid_pk": {
           "name": "locations_user_id_uuid_pk",
+          "columns": [
+            "user_id",
+            "uuid"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.note_images": {
+      "name": "note_images",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "uuid": {
+          "name": "uuid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "note_uuid": {
+          "name": "note_uuid",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "s3_key": {
+          "name": "s3_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "note_images_user_id_user_id_fk": {
+          "name": "note_images_user_id_user_id_fk",
+          "tableFrom": "note_images",
+          "tableTo": "user",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "note_images_note_fk": {
+          "name": "note_images_note_fk",
+          "tableFrom": "note_images",
+          "tableTo": "notes",
+          "columnsFrom": [
+            "user_id",
+            "note_uuid"
+          ],
+          "columnsTo": [
+            "user_id",
+            "uuid"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "note_images_user_id_uuid_pk": {
+          "name": "note_images_user_id_uuid_pk",
           "columns": [
             "user_id",
             "uuid"

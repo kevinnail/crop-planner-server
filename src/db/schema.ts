@@ -314,3 +314,31 @@ export const notes = pgTable(
       ),
   ],
 );
+
+// note_images — the 9th synced table. Images are attachments belonging to a
+// note; the binary lives in a private S3 bucket and only its `s3_key` reference
+// rides the sync wire. Same (user_id, uuid) / LWW / full-row-tombstone contract
+// as the other synced tables. A winning tombstone triggers a best-effort S3
+// DeleteObject after the push transaction commits (see routes/sync.ts).
+export const noteImages = pgTable(
+  'note_images',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    uuid: text('uuid').notNull(),
+    noteUuid: text('note_uuid').notNull(),
+    s3Key: text('s3_key').notNull(),
+    createdAt: text('created_at').notNull(),
+    updatedAt: text('updated_at').notNull(),
+    deletedAt: text('deleted_at'),
+  },
+  (table) => [
+    primaryKey({ columns: [table.userId, table.uuid] }),
+    foreignKey({
+      columns: [table.userId, table.noteUuid],
+      foreignColumns: [notes.userId, notes.uuid],
+      name: 'note_images_note_fk',
+    }).onDelete('cascade'),
+  ],
+);

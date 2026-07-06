@@ -36,6 +36,12 @@ const UPLOAD_URL_TTL_SECONDS = 600; // ~10 min
 
 const DOWNLOAD_URL_TTL_SECONDS = 900; // ~15 min
 
+// Hard cap on a single note image. The client declares the exact byte length up
+// front; the route rejects anything larger, and the presigned PUT below binds
+// that exact length so S3 refuses a body that doesn't match. A 12 MP capture at
+// JPEG quality 0.85 lands around 2–5 MB, so 15 MiB is comfortable headroom.
+export const MAX_IMAGE_BYTES = 15 * 1024 * 1024;
+
 // The per-user key prefix. Ownership of an s3_key means "starts with this" —
 // used both to build server-constructed keys and to gate client-supplied keys
 // on push/download. The trailing slash is load-bearing: it prevents one user id
@@ -51,11 +57,28 @@ export function buildImageKey(userId: string, uuid: string, ext: string): string
   return `${buildImageKeyPrefix(userId)}${uuid}.${ext}`;
 }
 
-export function createUploadUrl(key: string, contentType: string): Promise<string> {
+// `contentLength` is baked into the signature: adding `content-length` (and
+// `content-type`) to `signableHeaders` makes S3 enforce them, so the client
+// must PUT exactly `contentLength` bytes of exactly `contentType` — a mismatch
+// is rejected with 403. Setting ContentLength on the command alone is NOT
+// enough; a non-`x-amz-*` header is only enforced when it is signed.
+export function createUploadUrl(
+  key: string,
+  contentType: string,
+  contentLength: number,
+): Promise<string> {
   return getSignedUrl(
     s3Client,
-    new PutObjectCommand({ Bucket: bucket, Key: key, ContentType: contentType }),
-    { expiresIn: UPLOAD_URL_TTL_SECONDS },
+    new PutObjectCommand({
+      Bucket: bucket,
+      Key: key,
+      ContentType: contentType,
+      ContentLength: contentLength,
+    }),
+    {
+      expiresIn: UPLOAD_URL_TTL_SECONDS,
+      signableHeaders: new Set(['content-length', 'content-type']),
+    },
   );
 }
 

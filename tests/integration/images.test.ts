@@ -16,6 +16,7 @@ vi.mock('../../src/lib/s3', () => ({
     'image/webp': 'webp',
     'image/heic': 'heic',
   },
+  buildImageKeyPrefix: (userId: string): string => `note-images/${userId}/`,
   buildImageKey: (userId: string, uuid: string, ext: string): string =>
     `note-images/${userId}/${uuid}.${ext}`,
   createUploadUrl: vi.fn((key: string) => Promise.resolve(`https://s3.test/upload/${key}`)),

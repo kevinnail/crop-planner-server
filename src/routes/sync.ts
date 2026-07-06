@@ -832,6 +832,16 @@ router.post(
       res.status(400).json({ error: 'Expected non-empty `uuid`' });
       return;
     }
+    // The uuid becomes a path segment in the server-constructed S3 key. Restrict
+    // it to a key-safe charset so it can't introduce `/` (extra path segments)
+    // or other structural characters. Client UUIDs are hex + hyphens, so this is
+    // never hit in practice — it's defense-in-depth on key construction.
+    if (!/^[A-Za-z0-9._-]+$/.test(body.uuid)) {
+      res
+        .status(400)
+        .json({ error: 'Invalid `uuid`: allowed characters are letters, digits, . _ -' });
+      return;
+    }
     const contentType = typeof body.content_type === 'string' ? body.content_type : '';
     const ext = CONTENT_TYPE_EXT[contentType];
     if (ext === undefined) {

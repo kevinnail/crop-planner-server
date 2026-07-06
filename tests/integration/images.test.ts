@@ -124,6 +124,19 @@ describe('POST /sync/image/upload-url', () => {
     expect((res.body as ErrorResponse).error).toBe('Unsupported `content_type`');
   });
 
+  it('returns 400 when `uuid` contains a path separator', async () => {
+    const { cookies } = await subscribedCaller('upload-bad-uuid@example.com');
+
+    const res = await request(app)
+      .post('/sync/image/upload-url')
+      .set('Cookie', cookieHeader(cookies))
+      .send({ uuid: '../other-user/evil', content_type: 'image/jpeg', content_length: 1024 });
+
+    expect(res.status).toBe(400);
+    expect((res.body as ErrorResponse).error).toMatch(/Invalid `uuid`/);
+    expect(vi.mocked(createUploadUrl)).not.toHaveBeenCalled();
+  });
+
   it('returns 400 when `content_length` is missing or not a positive integer', async () => {
     const { cookies } = await subscribedCaller('upload-no-length@example.com');
 

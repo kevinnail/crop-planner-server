@@ -18,6 +18,7 @@ vi.mock('../../src/lib/s3', () => ({
     'image/webp': 'webp',
     'image/heic': 'heic',
   },
+  MAX_IMAGE_BYTES: 15 * 1024 * 1024,
   buildImageKeyPrefix: (userId: string): string => `note-images/${userId}/`,
   buildImageKey: (userId: string, uuid: string, ext: string): string =>
     `note-images/${userId}/${uuid}.${ext}`,

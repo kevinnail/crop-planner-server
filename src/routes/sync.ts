@@ -17,6 +17,7 @@ import { requireAuth } from '../middleware/requireAuth';
 import { checkSubscription } from '../middleware/checkSubscription';
 import {
   CONTENT_TYPE_EXT,
+  MAX_IMAGE_BYTES,
   buildImageKey,
   buildImageKeyPrefix,
   createUploadUrl,
@@ -826,7 +827,7 @@ router.post(
       return;
     }
 
-    const body = req.body as { uuid?: unknown; content_type?: unknown };
+    const body = req.body as { uuid?: unknown; content_type?: unknown; content_length?: unknown };
     if (typeof body.uuid !== 'string' || body.uuid.length === 0) {
       res.status(400).json({ error: 'Expected non-empty `uuid`' });
       return;
@@ -837,9 +838,28 @@ router.post(
       res.status(400).json({ error: 'Unsupported `content_type`' });
       return;
     }
+    // The client declares the exact byte length; it is signed into the PUT
+    // (see createUploadUrl) so S3 rejects a body that doesn't match.
+    const contentLength = body.content_length;
+    if (
+      typeof contentLength !== 'number' ||
+      !Number.isInteger(contentLength) ||
+      contentLength < 1
+    ) {
+      res.status(400).json({ error: 'Expected positive integer `content_length`' });
+      return;
+    }
+    if (contentLength > MAX_IMAGE_BYTES) {
+      res.status(400).json({
+        error: `Image exceeds the maximum size of ${MAX_IMAGE_BYTES.toString()} bytes`,
+        code: 'IMAGE_TOO_LARGE',
+        max_bytes: MAX_IMAGE_BYTES,
+      });
+      return;
+    }
 
     const s3Key = buildImageKey(userId, body.uuid, ext);
-    const uploadUrl = await createUploadUrl(s3Key, contentType);
+    const uploadUrl = await createUploadUrl(s3Key, contentType, contentLength);
 
     res.status(200).json({ upload_url: uploadUrl, s3_key: s3Key });
   }),

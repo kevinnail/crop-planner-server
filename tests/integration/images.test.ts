@@ -16,10 +16,13 @@ vi.mock('../../src/lib/s3', () => ({
     'image/webp': 'webp',
     'image/heic': 'heic',
   },
+  MAX_IMAGE_BYTES: 15 * 1024 * 1024,
   buildImageKeyPrefix: (userId: string): string => `note-images/${userId}/`,
   buildImageKey: (userId: string, uuid: string, ext: string): string =>
     `note-images/${userId}/${uuid}.${ext}`,
-  createUploadUrl: vi.fn((key: string) => Promise.resolve(`https://s3.test/upload/${key}`)),
+  createUploadUrl: vi.fn((key: string, _contentType: string, _contentLength: number) =>
+    Promise.resolve(`https://s3.test/upload/${key}`),
+  ),
   createDownloadUrl: vi.fn((key: string) => Promise.resolve(`https://s3.test/download/${key}`)),
   deleteImageObject: vi.fn(() => Promise.resolve()),
 }));
@@ -115,26 +118,67 @@ describe('POST /sync/image/upload-url', () => {
     const res = await request(app)
       .post('/sync/image/upload-url')
       .set('Cookie', cookieHeader(cookies))
-      .send({ uuid: 'img-1', content_type: 'application/pdf' });
+      .send({ uuid: 'img-1', content_type: 'application/pdf', content_length: 1024 });
 
     expect(res.status).toBe(400);
     expect((res.body as ErrorResponse).error).toBe('Unsupported `content_type`');
   });
 
-  it('returns the user-scoped key + presigned upload URL for a valid request', async () => {
-    const { userId, cookies } = await subscribedCaller('upload-ok@example.com');
+  it('returns 400 when `content_length` is missing or not a positive integer', async () => {
+    const { cookies } = await subscribedCaller('upload-no-length@example.com');
+
+    const missing = await request(app)
+      .post('/sync/image/upload-url')
+      .set('Cookie', cookieHeader(cookies))
+      .send({ uuid: 'img-1', content_type: 'image/jpeg' });
+    expect(missing.status).toBe(400);
+    expect((missing.body as ErrorResponse).error).toBe(
+      'Expected positive integer `content_length`',
+    );
+
+    const zero = await request(app)
+      .post('/sync/image/upload-url')
+      .set('Cookie', cookieHeader(cookies))
+      .send({ uuid: 'img-1', content_type: 'image/jpeg', content_length: 0 });
+    expect(zero.status).toBe(400);
+
+    expect(vi.mocked(createUploadUrl)).not.toHaveBeenCalled();
+  });
+
+  it('returns 400 with an IMAGE_TOO_LARGE code when content_length exceeds the cap', async () => {
+    const { cookies } = await subscribedCaller('upload-too-large@example.com');
 
     const res = await request(app)
       .post('/sync/image/upload-url')
       .set('Cookie', cookieHeader(cookies))
-      .send({ uuid: 'img-1', content_type: 'image/jpeg' });
+      .send({ uuid: 'img-1', content_type: 'image/jpeg', content_length: 15 * 1024 * 1024 + 1 });
+
+    expect(res.status).toBe(400);
+    const body = res.body as { code: string; max_bytes: number };
+    expect(body.code).toBe('IMAGE_TOO_LARGE');
+    expect(body.max_bytes).toBe(15 * 1024 * 1024);
+    expect(vi.mocked(createUploadUrl)).not.toHaveBeenCalled();
+  });
+
+  it('returns the user-scoped key + presigned upload URL for a valid request', async () => {
+    const { userId, cookies } = await subscribedCaller('upload-ok@example.com');
+
+    const contentLength = 2 * 1024 * 1024;
+    const res = await request(app)
+      .post('/sync/image/upload-url')
+      .set('Cookie', cookieHeader(cookies))
+      .send({ uuid: 'img-1', content_type: 'image/jpeg', content_length: contentLength });
 
     expect(res.status).toBe(200);
     const body = res.body as { upload_url: string; s3_key: string };
     const expectedKey = `note-images/${userId}/img-1.jpg`;
     expect(body.s3_key).toBe(expectedKey);
     expect(body.upload_url).toBe(`https://s3.test/upload/${expectedKey}`);
-    expect(vi.mocked(createUploadUrl)).toHaveBeenCalledWith(expectedKey, 'image/jpeg');
+    expect(vi.mocked(createUploadUrl)).toHaveBeenCalledWith(
+      expectedKey,
+      'image/jpeg',
+      contentLength,
+    );
   });
 });
 

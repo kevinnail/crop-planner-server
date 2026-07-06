@@ -18,6 +18,7 @@ import { checkSubscription } from '../middleware/checkSubscription';
 import {
   CONTENT_TYPE_EXT,
   buildImageKey,
+  buildImageKeyPrefix,
   createUploadUrl,
   createDownloadUrl,
   deleteImageObject,
@@ -693,15 +694,27 @@ const pushHandlers: Record<PushTableName, PushHandler> = {
   },
 
   note_images: async (transaction, userId, rows) => {
-    const values = rows.map((row) => ({
-      userId,
-      uuid: asUuid(row.uuid, 'note_images.uuid'),
-      noteUuid: asUuid(row.note_uuid, 'note_images.note_uuid'),
-      s3Key: asString(row.s3_key, 'note_images.s3_key'),
-      createdAt: asString(row.created_at, 'note_images.created_at'),
-      updatedAt: asString(row.updated_at, 'note_images.updated_at'),
-      deletedAt: asStringOrNull(row.deleted_at, 'note_images.deleted_at'),
-    }));
+    // s3_key is the one synced value the client supplies that later reaches S3
+    // (a winning tombstone triggers DeleteObject on it). Enforce that every key
+    // sits under the caller's own prefix — otherwise a caller could store, and
+    // then tombstone-delete, another user's object. Mirrors the download-url
+    // gate below.
+    const ownedPrefix = buildImageKeyPrefix(userId);
+    const values = rows.map((row) => {
+      const s3Key = asString(row.s3_key, 'note_images.s3_key');
+      if (!s3Key.startsWith(ownedPrefix)) {
+        throw new BadRequestError('note_images.s3_key is outside the caller prefix');
+      }
+      return {
+        userId,
+        uuid: asUuid(row.uuid, 'note_images.uuid'),
+        noteUuid: asUuid(row.note_uuid, 'note_images.note_uuid'),
+        s3Key,
+        createdAt: asString(row.created_at, 'note_images.created_at'),
+        updatedAt: asString(row.updated_at, 'note_images.updated_at'),
+        deletedAt: asStringOrNull(row.deleted_at, 'note_images.deleted_at'),
+      };
+    });
     const existingRows = await transaction
       .select({ uuid: noteImages.uuid, updatedAt: noteImages.updatedAt })
       .from(noteImages)
@@ -848,9 +861,9 @@ router.post(
       res.status(400).json({ error: 'Expected non-empty `s3_key`' });
       return;
     }
-    // IDOR gate: a caller may only download keys under their own prefix. No S3
-    // call is needed to reject.
-    if (!body.s3_key.startsWith(`note-images/${userId}/`)) {
+    // Ownership gate: a caller may only download keys under their own prefix.
+    // No S3 call is needed to reject.
+    if (!body.s3_key.startsWith(buildImageKeyPrefix(userId))) {
       res.status(403).json({ error: 'Forbidden' });
       return;
     }

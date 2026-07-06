@@ -58,6 +58,20 @@ describe('POST /webhooks/revenuecat', () => {
       const rows = await db.select().from(subscriptions);
       expect(rows).toHaveLength(0);
     });
+
+    it('rejects a wrong header of the same length (constant-time compare path)', async () => {
+      const sameLengthWrong = 'X'.repeat(AUTH.length);
+      expect(sameLengthWrong).not.toBe(AUTH);
+
+      const res = await request(app)
+        .post('/webhooks/revenuecat')
+        .set('Authorization', sameLengthWrong)
+        .send(buildBody());
+
+      expect(res.status).toBe(401);
+      const rows = await db.select().from(subscriptions);
+      expect(rows).toHaveLength(0);
+    });
   });
 
   describe('happy path', () => {

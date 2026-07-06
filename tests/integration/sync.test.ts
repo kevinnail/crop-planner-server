@@ -18,6 +18,7 @@ vi.mock('../../src/lib/s3', () => ({
     'image/webp': 'webp',
     'image/heic': 'heic',
   },
+  buildImageKeyPrefix: (userId: string): string => `note-images/${userId}/`,
   buildImageKey: (userId: string, uuid: string, ext: string): string =>
     `note-images/${userId}/${uuid}.${ext}`,
   createUploadUrl: vi.fn((key: string) => Promise.resolve(`https://s3.test/upload/${key}`)),
@@ -986,7 +987,12 @@ describe('POST /sync/push', () => {
           changed: [
             {
               table: 'note_images',
-              rows: [noteImageRow(userId, { s3_key: 'should-not-win', updated_at: older })],
+              rows: [
+                noteImageRow(userId, {
+                  s3_key: `note-images/${userId}/should-not-win.jpg`,
+                  updated_at: older,
+                }),
+              ],
             },
           ],
         });
@@ -1082,6 +1088,49 @@ describe('POST /sync/push', () => {
       const pullRes = await request(app).get('/sync/pull').set('Cookie', cookieHeader(cookies));
       const pullBody = pullRes.body as SyncPullResponse;
       expect(pullBody.note_images).toEqual([]);
+    });
+
+    it('rejects a push whose s3_key points outside the caller prefix (no cross-tenant delete)', async () => {
+      // H1 regression: without the prefix gate, a tombstone carrying another
+      // user's s3_key would trigger DeleteObject on the victim's object.
+      const victim = await signUp({ email: 'img-victim@example.com' });
+      await makeActiveSubscription(victim.userId);
+
+      const attacker = await signUp({ email: 'img-attacker@example.com' });
+      await makeActiveSubscription(attacker.userId);
+      await seedFullDataset(attacker.userId); // attacker owns note-1
+
+      const newer = '2026-05-11 09:00:00.000';
+      const pushRes = await request(app)
+        .post('/sync/push')
+        .set('Cookie', cookieHeader(attacker.cookies))
+        .send({
+          changed: [
+            {
+              table: 'note_images',
+              rows: [
+                {
+                  uuid: 'attacker-img-1',
+                  note_uuid: 'note-1',
+                  s3_key: `note-images/${victim.userId}/victim-img.jpg`,
+                  created_at: SEED_TS,
+                  updated_at: newer,
+                  deleted_at: newer,
+                },
+              ],
+            },
+          ],
+        });
+
+      expect(pushRes.status).toBe(400);
+      expect(vi.mocked(deleteImageObject)).not.toHaveBeenCalled();
+
+      // The whole transaction aborts, so the hostile row is never written.
+      const pushedRows = await db
+        .select()
+        .from(noteImages)
+        .where(and(eq(noteImages.userId, attacker.userId), eq(noteImages.uuid, 'attacker-img-1')));
+      expect(pushedRows).toHaveLength(0);
     });
   });
 

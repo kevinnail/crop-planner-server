@@ -36,11 +36,19 @@ const UPLOAD_URL_TTL_SECONDS = 600; // ~10 min
 
 const DOWNLOAD_URL_TTL_SECONDS = 900; // ~15 min
 
+// The per-user key prefix. Ownership of an s3_key means "starts with this" —
+// used both to build server-constructed keys and to gate client-supplied keys
+// on push/download. The trailing slash is load-bearing: it prevents one user id
+// from prefix-matching another whose id shares a leading substring.
+export function buildImageKeyPrefix(userId: string): string {
+  return `note-images/${userId}/`;
+}
+
 // Server-constructed, user-scoped key. The client never supplies the key or
 // path — this is what makes ownership enforceable: a caller can only ever be
 // handed keys under their own `{userId}/` prefix.
 export function buildImageKey(userId: string, uuid: string, ext: string): string {
-  return `note-images/${userId}/${uuid}.${ext}`;
+  return `${buildImageKeyPrefix(userId)}${uuid}.${ext}`;
 }
 
 export function createUploadUrl(key: string, contentType: string): Promise<string> {

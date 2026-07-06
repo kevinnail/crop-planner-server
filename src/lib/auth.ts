@@ -19,6 +19,32 @@ export const auth = betterAuth({
   secret,
   trustedOrigins: ['cropplanner://', ...(process.env.NODE_ENV !== 'production' ? ['exp://*'] : [])],
 
+  // Railway's edge (Envoy) sets x-envoy-external-address to the real external
+  // client IP as a single, connection-derived value. Unlike the x-forwarded-for
+  // chain — whose left-most entry a client can inject — this can't be spoofed via
+  // a request header, so per-IP rate limits below actually track the caller.
+  advanced: {
+    ipAddress: {
+      ipAddressHeaders: ['x-envoy-external-address'],
+    },
+  },
+
+  // Rate limiting is on in production only (better-auth's default), so the test
+  // suite's rapid sign-up/sign-in loops aren't throttled. The blanket default is
+  // window: 10s / max: 100; these rules tighten the abuse-prone auth endpoints:
+  // credential brute-force on sign-in, mass account creation, and password-reset
+  // email bombing (each reset request sends a real Resend email).
+  rateLimit: {
+    enabled: process.env.NODE_ENV === 'production',
+    storage: 'memory',
+    customRules: {
+      '/sign-in/email': { window: 60, max: 5 },
+      '/sign-up/email': { window: 3600, max: 10 },
+      '/request-password-reset': { window: 3600, max: 5 },
+      '/reset-password': { window: 3600, max: 10 },
+    },
+  },
+
   database: drizzleAdapter(db, {
     provider: 'pg',
     schema,

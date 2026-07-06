@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { db } from '../db/connection';
 import { subscriptions, user } from '../db/schema';
@@ -6,6 +7,17 @@ import { asyncHandler } from '../lib/asyncHandler';
 
 const expectedAuth = process.env.REVENUECAT_WEBHOOK_AUTH_HEADER;
 if (!expectedAuth) throw new Error('REVENUECAT_WEBHOOK_AUTH_HEADER is not set');
+const expectedAuthBytes = Buffer.from(expectedAuth);
+
+// Constant-time comparison of the shared webhook secret so the header can't be
+// recovered by timing a plain `!==`. The length check leaks only the secret's
+// length (standard and acceptable); timingSafeEqual requires equal-length bufs.
+function isValidWebhookAuth(header: string | undefined): boolean {
+  if (typeof header !== 'string') return false;
+  const headerBytes = Buffer.from(header);
+  if (headerBytes.length !== expectedAuthBytes.length) return false;
+  return timingSafeEqual(headerBytes, expectedAuthBytes);
+}
 
 const ACTIVATING = new Set(['INITIAL_PURCHASE', 'RENEWAL', 'UNCANCELLATION', 'PRODUCT_CHANGE']);
 const DEACTIVATING = new Set(['EXPIRATION', 'CANCELLATION']);
@@ -26,7 +38,7 @@ const router = Router();
 router.post(
   '/revenuecat',
   asyncHandler(async (req, res) => {
-    if (req.headers.authorization !== expectedAuth) {
+    if (!isValidWebhookAuth(req.headers.authorization)) {
       res.status(401).json({ error: 'unauthorized' });
       return;
     }

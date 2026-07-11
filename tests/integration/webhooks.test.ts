@@ -198,4 +198,106 @@ describe('POST /webhooks/revenuecat', () => {
       expect(res.status).toBe(400);
     });
   });
+
+  describe('TRANSFER events', () => {
+    const ANON_FROM = '$RCAnonymousID:cd8d54a26312473ca9fd0f4654c67923';
+    const ANON_TO = '$RCAnonymousID:8a984ebc73304f80bb878fae4b5cad70';
+
+    function buildTransferBody(
+      transferredFrom: string[],
+      transferredTo: string[],
+    ): Record<string, unknown> {
+      return {
+        api_version: '1.0',
+        event: {
+          type: 'TRANSFER',
+          transferred_from: transferredFrom,
+          transferred_to: transferredTo,
+        },
+      };
+    }
+
+    async function seedUser(id: string, email: string): Promise<void> {
+      await db.insert(user).values({ id, name: id, email });
+    }
+
+    it('moves an active subscription from the source to the destination user', async () => {
+      const sourceUserId = 'user_transfer_source';
+      const destUserId = 'user_transfer_dest';
+      await seedUser(sourceUserId, 'source@example.com');
+      await seedUser(destUserId, 'dest@example.com');
+
+      // Establish an active subscription under the source identity.
+      await request(app)
+        .post('/webhooks/revenuecat')
+        .set('Authorization', AUTH)
+        .send(buildBody({ app_user_id: sourceUserId }));
+
+      const res = await request(app)
+        .post('/webhooks/revenuecat')
+        .set('Authorization', AUTH)
+        .send(buildTransferBody([ANON_FROM, sourceUserId], [destUserId, ANON_TO]));
+
+      expect(res.status).toBe(200);
+
+      const sourceRows = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.rcUserId, sourceUserId));
+      expect(sourceRows).toHaveLength(1);
+      expect(sourceRows[0]?.status).toBe('expired');
+
+      const destRows = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.rcUserId, destUserId));
+      expect(destRows).toHaveLength(1);
+      const [destRow] = destRows;
+      if (!destRow) throw new Error('expected a destination subscription row');
+      expect(destRow.status).toBe('active');
+      expect(destRow.userId).toBe(destUserId);
+      expect(destRow.productId).toBe(PRODUCT_ID);
+      expect(destRow.expiresAt?.getTime()).toBe(EXPIRES_AT_MS);
+    });
+
+    it('carries the subscription to an unknown destination id with a null userId', async () => {
+      const sourceUserId = 'user_transfer_source2';
+      const unknownDestId = 'ZvTw9DX7onbxjyE8RqA0HrOzzC8UZH84';
+      await seedUser(sourceUserId, 'source2@example.com');
+
+      await request(app)
+        .post('/webhooks/revenuecat')
+        .set('Authorization', AUTH)
+        .send(buildBody({ app_user_id: sourceUserId }));
+
+      const res = await request(app)
+        .post('/webhooks/revenuecat')
+        .set('Authorization', AUTH)
+        .send(buildTransferBody([sourceUserId], [ANON_TO, unknownDestId]));
+
+      expect(res.status).toBe(200);
+
+      const destRows = await db
+        .select()
+        .from(subscriptions)
+        .where(eq(subscriptions.rcUserId, unknownDestId));
+      expect(destRows).toHaveLength(1);
+      expect(destRows[0]?.status).toBe('active');
+      expect(destRows[0]?.userId).toBeNull();
+    });
+
+    it('is a 200 no-op when no tracked subscription exists for the source', async () => {
+      const destUserId = 'user_transfer_dest3';
+      await seedUser(destUserId, 'dest3@example.com');
+
+      const res = await request(app)
+        .post('/webhooks/revenuecat')
+        .set('Authorization', AUTH)
+        .send(buildTransferBody([ANON_FROM], [destUserId, ANON_TO]));
+
+      expect(res.status).toBe(200);
+      const rows = await db.select().from(subscriptions);
+      expect(rows).toHaveLength(0);
+    });
+  });
 });

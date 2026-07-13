@@ -16,6 +16,7 @@ const EXPIRES_AT_MS = Date.UTC(2099, 0, 1);
 interface EventOverrides {
   type?: string;
   app_user_id?: string;
+  aliases?: string[];
   product_id?: string | null;
   expiration_at_ms?: number | null;
 }
@@ -25,6 +26,9 @@ function buildBody(overrides: EventOverrides = {}): Record<string, unknown> {
     type: overrides.type ?? 'INITIAL_PURCHASE',
     app_user_id: overrides.app_user_id ?? APP_USER_ID,
   };
+  if (overrides.aliases) {
+    event.aliases = overrides.aliases;
+  }
   if (overrides.product_id !== null) {
     event.product_id = overrides.product_id ?? PRODUCT_ID;
   }
@@ -75,6 +79,16 @@ describe('POST /webhooks/revenuecat', () => {
   });
 
   describe('happy path', () => {
+    // Webhook events only produce rows for known accounts, so the default
+    // APP_USER_ID must exist as a better-auth user.
+    beforeEach(async () => {
+      await db.insert(user).values({
+        id: APP_USER_ID,
+        name: 'Webhook Tester',
+        email: 'webhook-tester@example.com',
+      });
+    });
+
     it('inserts an active subscription on INITIAL_PURCHASE', async () => {
       const res = await request(app)
         .post('/webhooks/revenuecat')
@@ -91,7 +105,7 @@ describe('POST /webhooks/revenuecat', () => {
       expect(row.status).toBe('active');
       expect(row.productId).toBe(PRODUCT_ID);
       expect(row.expiresAt?.getTime()).toBe(EXPIRES_AT_MS);
-      expect(row.userId).toBeNull();
+      expect(row.userId).toBe(APP_USER_ID);
     });
 
     it('flips status to expired on EXPIRATION for an existing subscription', async () => {
@@ -154,15 +168,58 @@ describe('POST /webhooks/revenuecat', () => {
       expect(rows[0]?.userId).toBe(userId);
     });
 
-    it('leaves userId null when app_user_id does not match any user', async () => {
+    it('routes a RENEWAL carrying an anonymous last-seen app_user_id to the canonical row via aliases', async () => {
+      // Regression: RevenueCat fires renewals with the customer's *last-seen*
+      // alias as app_user_id. When that alias is an app-launch anonymous id,
+      // the renewal must still land on the signed-in account's row — before
+      // this fix it inserted an unmatchable anonymous row while the real row
+      // went stale and /sync/* started 403ing a paying user.
+      const FIRST_EXPIRY = Date.UTC(2050, 0, 1);
       await request(app)
         .post('/webhooks/revenuecat')
         .set('Authorization', AUTH)
-        .send(buildBody({ app_user_id: 'unknown_user_xyz' }));
+        .send(buildBody({ type: 'INITIAL_PURCHASE', expiration_at_ms: FIRST_EXPIRY }));
+
+      const RENEWED_EXPIRY = Date.UTC(2051, 0, 1);
+      const anonymousId = '$RCAnonymousID:d0f81ecd1586424db65f5a6c3459475d';
+      const res = await request(app)
+        .post('/webhooks/revenuecat')
+        .set('Authorization', AUTH)
+        .send(
+          buildBody({
+            type: 'RENEWAL',
+            app_user_id: anonymousId,
+            aliases: [anonymousId, APP_USER_ID],
+            expiration_at_ms: RENEWED_EXPIRY,
+          }),
+        );
+
+      expect(res.status).toBe(200);
 
       const rows = await db.select().from(subscriptions);
       expect(rows).toHaveLength(1);
-      expect(rows[0]?.userId).toBeNull();
+      const [row] = rows;
+      if (!row) throw new Error('expected one subscription row');
+      expect(row.rcUserId).toBe(APP_USER_ID);
+      expect(row.userId).toBe(APP_USER_ID);
+      expect(row.status).toBe('active');
+      expect(row.expiresAt?.getTime()).toBe(RENEWED_EXPIRY);
+    });
+
+    it('acknowledges and writes nothing when no candidate id matches a user', async () => {
+      const res = await request(app)
+        .post('/webhooks/revenuecat')
+        .set('Authorization', AUTH)
+        .send(
+          buildBody({
+            app_user_id: '$RCAnonymousID:8ce852924d8e4adaa1d22fa9ab00441d',
+            aliases: ['$RCAnonymousID:8ce852924d8e4adaa1d22fa9ab00441d'],
+          }),
+        );
+
+      expect(res.status).toBe(200);
+      const rows = await db.select().from(subscriptions);
+      expect(rows).toHaveLength(0);
     });
   });
 

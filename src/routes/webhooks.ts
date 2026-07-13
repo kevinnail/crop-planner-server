@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { timingSafeEqual } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { db } from '../db/connection';
 import { subscriptions, user } from '../db/schema';
 import { asyncHandler } from '../lib/asyncHandler';
@@ -25,6 +25,7 @@ const DEACTIVATING = new Set(['EXPIRATION', 'CANCELLATION']);
 interface RevenueCatEvent {
   type?: string;
   app_user_id?: string;
+  aliases?: string[];
   product_id?: string;
   expiration_at_ms?: number;
 }
@@ -75,20 +76,40 @@ router.post(
       return;
     }
 
-    const matchedUser = await db
+    // RevenueCat sets `app_user_id` to the customer's *last-seen* alias, which
+    // can be an app-launch anonymous id ($RCAnonymousID:...) even when the
+    // purchase belongs to a signed-in account — renewals fired while the app
+    // was signed out arrive that way. The event's `aliases` array carries every
+    // id the customer has been known by, including the better-auth user.id set
+    // at login, so resolve against all of them (app_user_id first for
+    // determinism). Events that resolve to no account are acknowledged and
+    // skipped: a row without a user id can never satisfy checkSubscription and
+    // would only shadow the real row while it goes stale.
+    const candidateIds = [event.app_user_id, ...(event.aliases ?? [])].filter(
+      (candidate): candidate is string => typeof candidate === 'string' && candidate.length > 0,
+    );
+    const matchedUsers = await db
       .select({ id: user.id })
       .from(user)
-      .where(eq(user.id, event.app_user_id));
-    const userId = matchedUser[0]?.id ?? null;
+      .where(inArray(user.id, candidateIds));
+    const matchedIds = new Set(matchedUsers.map((matched) => matched.id));
+    const userId = candidateIds.find((candidate) => matchedIds.has(candidate));
+
+    if (!userId) {
+      res.status(200).json({ ignored: 'no matching user' });
+      return;
+    }
 
     const productId = event.product_id ?? null;
     const expiresAt =
       typeof event.expiration_at_ms === 'number' ? new Date(event.expiration_at_ms) : null;
 
+    // Key the row on the resolved user id, not the raw event alias, so every
+    // event for this customer lands on the same canonical row.
     await db
       .insert(subscriptions)
       .values({
-        rcUserId: event.app_user_id,
+        rcUserId: userId,
         userId,
         status,
         productId,
@@ -100,9 +121,7 @@ router.post(
           status,
           productId,
           expiresAt,
-          // Only overwrite userId if we successfully resolved one this time —
-          // preserves any link established by a prior webhook.
-          ...(userId ? { userId } : {}),
+          userId,
           updatedAt: new Date(),
         },
       });
